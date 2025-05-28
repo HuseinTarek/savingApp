@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE hibernate-configuration PUBLIC
+        "-//Hibernate/Hibernate Configuration DTD 3.0//EN"
+        "http://www.hibernate.org/dtd/hibernate-configuration-3.0.dtd">
+
+<hibernate-configuration>
+    <session-factory>
+        <!-- Database connection settings -->
+        <property name="connection.driver_class">com.mysql.cj.jdbc.Driver</property>
+        <property name="connection.url">jdbc:mysql://localhost:3306/Sweden?createDatabaseIfNotExist=true</property>
+        <property name="connection.username">root</property>
+        <property name="connection.password">root</property>
+        <property name="hibernate.connection.pool_size">100</property>
+        <property name="hibernate.hbm2ddl.auto">update</property>
+
+
+        <!-- JDBC connection pool settings -->
+        <property name="connection.pool_size">1</property>
+
+        <!-- SQL dialect -->
+        <property name="dialect">org.hibernate.dialect.MySQLDialect</property>
+
+        <!-- Echo all executed SQL to stdout -->
+        <property name="show_sql">false</property>
+
+        <!-- Drop and re-create the database schema on startup -->
+        <property name="hbm2ddl.auto">update</property>
+
+        <!-- Names the annotated entity class -->
+        <mapping class="com.swedenrosca.model.User"/>
+        <mapping class="com.swedenrosca.model.Group"/>
+        <mapping class="com.swedenrosca.model.Round"/>
+        <mapping class="com.swedenrosca.model.Payment"/>
+        <mapping class="com.swedenrosca.model.Participant"/>
+        <mapping class="com.swedenrosca.model.Role"/>
+        <mapping class="com.swedenrosca.model.PaymentStatus"/>
+        <mapping class="com.swedenrosca.model.GroupStatus"/>
+        <mapping class="com.swedenrosca.model.PaymentBy"/>
+        <mapping class="com.swedenrosca.model.GroupRole"/>
+        <mapping class="com.swedenrosca.model.MonthlyPayment"/>
+        <mapping class="com.swedenrosca.model.RoundStatus"/>
+        <mapping class="com.swedenrosca.model.PaymentPlan"/>
+        <mapping class="com.swedenrosca.model.PaymentOption"/>
+        <mapping class="com.swedenrosca.model.MonthOption"/>
+
+
+
+
+    </session-factory>
+</hibernate-configuration> 
