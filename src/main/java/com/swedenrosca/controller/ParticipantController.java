@@ -1,21 +1,20 @@
 package com.swedenrosca.controller;
 
 import com.swedenrosca.model.*;
-import com.swedenrosca.repository.ParticipantRepository;
-
+import com.swedenrosca.service.ParticipantService;
 import java.time.LocalDateTime;
 import java.util.List;
 
 public class ParticipantController {
-    private final ParticipantRepository participantRepository;
+    private final ParticipantService participantService;
 
-    public ParticipantController(ParticipantRepository participantRepository) {
-        this.participantRepository = participantRepository;
+    public ParticipantController(ParticipantService participantService) {
+        this.participantService = participantService;
     }
 
-    // ⬅️ عرض كل المشاركين في مجموعة
+    // Show all participants in a group
     public void showParticipants(Group group) {
-        List<Participant> participants = participantRepository.getByGroup(group);
+        List<Participant> participants = participantService.getByGroup(group);
         for (Participant p : participants) {
             System.out.println("👤 " + p.getUser().getUsername() +
                     " | Turn: " + p.getTurnOrder() +
@@ -24,36 +23,34 @@ public class ParticipantController {
         }
     }
 
-
-    // ⬅️ تسجيل أن مشارك دفع
+    // Mark a participant as paid
     public void markAsPaid(Participant participant) {
         participant.setStatus(PaymentStatus.PAID);
         participant.setPaidAt(LocalDateTime.now());
-        participantRepository.update(participant);
+        participantService.updateParticipant(participant);
     }
 
-
+    // Mark a participant as received
     public void markAsReceived(Participant participant) {
         participant.setReceiveStatus(ReceiveStatus.RECEIVED);
         participant.setReceivedAt(LocalDateTime.now());
-        participantRepository.update(participant);
+        participantService.updateParticipant(participant);
     }
 
-
     public Participant findById(Long participantId) {
-        return participantRepository.getById(participantId);
+        return participantService.getById(participantId);
     }
 
     public Participant winner(Group group, int turnOrder) {
-        return participantRepository.getByGroupAndTurnOrder(group,turnOrder);
+        return participantService.getByGroupAndTurnOrder(group, turnOrder);
     }
 
     public int countParticipants(Long groupId) {
-        return participantRepository.countParticipantsByGroup(groupId);
+        return participantService.countParticipantsByGroup(groupId);
     }
 
-
     public User getUserById(Long userId) {
-        return participantRepository.getById(userId).getUser();
+        Participant participant = participantService.getById(userId);
+        return participant != null ? participant.getUser() : null;
     }
 }

@@ -12,8 +12,12 @@ import javafx.scene.layout.*;
 import javafx.stage.Stage;
 import org.hibernate.SessionFactory;
 import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.property.SimpleIntegerProperty;
+import javafx.beans.property.IntegerProperty;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 
-import java.util.List;
+import java.util.*;
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
 import java.math.BigDecimal;
@@ -22,9 +26,16 @@ import java.util.ArrayList;
 import java.util.stream.IntStream;
 import java.util.Scanner;
 import java.util.Optional;
+import javafx.util.StringConverter;
+import java.util.Set;
+import org.hibernate.Session;
+import com.swedenrosca.service.*;
+import com.swedenrosca.controller.UserController;
+import com.swedenrosca.controller.ParticipantController;
+import com.swedenrosca.controller.PaymentPlanController;
 
 public class SavingsApplication extends Application {
-    private final SessionFactory sessionFactory = SingletonSessionFactory.getSessionFactory();
+    private final org.hibernate.SessionFactory sessionFactory = SingletonSessionFactory.getSessionFactory();
     private User currentUser;
     private Stage primaryStage;
 
@@ -36,66 +47,95 @@ public class SavingsApplication extends Application {
     private final UserController userController;
     private final ParticipantController participantController;
     private final AdminMonthPaymentController adminMonthPaymentController;
+    private final PaymentPlanController paymentPlanController;
 
-    // Repositories
-    private final UserRepository userRepository;
-    private final GroupRepository groupRepository;
-    private final ParticipantRepository participantRepository;
-    private final PaymentRepository paymentRepository;
-    private final MonthlyPaymentRepository monthlyPaymentRepository;
-    private final RoundRepository roundRepository;
-    private final PaymentPlanRepository paymentPlanRepository;
-    private final MonthOptionRepository monthOptionRepository;
-    private final PaymentOptionRepository paymentOptionRepository;
+    // Services
+    private final UserService userService;
+    private final GroupService groupService;
+    private final ParticipantService participantService;
+    private final PaymentService paymentService;
+    private final RoundService roundService;
+    private final PaymentOptionService paymentOptionService;
+    private final MonthlyPaymentService monthlyPaymentService;
+    private final MonthOptionService monthOptionService;
+    private final PaymentPlanService paymentPlanService;
+
+    // DemoDataGenerator
     private final DemoDataGenerator demoDataGenerator;
 
+    // Replace SimpleIntegerProperty with IntegerProperty
+    private IntegerProperty selectedGroupId = new SimpleIntegerProperty();
+
     public SavingsApplication() {
-        // Initialize repositories
-        this.userRepository = new UserRepository();
-        this.groupRepository = new GroupRepository();
-        this.participantRepository = new ParticipantRepository();
-        this.paymentRepository = new PaymentRepository();
-        this.monthlyPaymentRepository = new MonthlyPaymentRepository();
-        this.roundRepository = new RoundRepository();
-        this.paymentPlanRepository = new PaymentPlanRepository();
-        this.monthOptionRepository = new MonthOptionRepository();
-        this.paymentOptionRepository = new PaymentOptionRepository();
+        SessionFactory sessionFactory = SingletonSessionFactory.getSessionFactory();
         
-        // Initialize controllers
-        this.participantController = new ParticipantController(participantRepository);
-        this.monthlyPaymentController = new MonthlyPaymentController(monthlyPaymentRepository);
-        this.paymentController = new PaymentController(paymentRepository, participantRepository, groupRepository);
-        this.roundController = new RoundController(participantController, groupRepository, participantRepository, roundRepository);
-        this.groupController = new GroupController(participantRepository, groupRepository, userRepository, roundRepository, paymentRepository, paymentPlanRepository);
-        this.userController = new UserController(userRepository);
+        // Initialize repositories
+        UserRepository userRepository = new UserRepository();
+        GroupRepository groupRepository = new GroupRepository();
+        ParticipantRepository participantRepository = new ParticipantRepository();
+        PaymentRepository paymentRepository = new PaymentRepository();
+        PaymentPlanRepository paymentPlanRepository = new PaymentPlanRepository();
+        RoundRepository roundRepository = new RoundRepository();
+        MonthOptionRepository monthOptionRepository = new MonthOptionRepository();
+        PaymentOptionRepository paymentOptionRepository = new PaymentOptionRepository();
+        MonthlyPaymentRepository monthlyPaymentRepository = new MonthlyPaymentRepository();
+
+        // Initialize services
+        this.userService = new UserService(sessionFactory, userRepository);
+        this.groupService = new GroupService(sessionFactory, groupRepository, participantRepository, paymentPlanRepository, roundRepository, paymentRepository, userRepository);
+        this.participantService = new ParticipantService(participantRepository);
+        this.paymentService = new PaymentService(paymentRepository, groupRepository, participantRepository);
+        this.roundService = new RoundService(roundRepository, groupRepository, participantRepository, userRepository);
+        this.paymentOptionService = new PaymentOptionService(sessionFactory, paymentOptionRepository);
+        this.monthlyPaymentService = new MonthlyPaymentService(monthlyPaymentRepository);
+        this.monthOptionService = new MonthOptionService(sessionFactory, monthOptionRepository);
+        this.paymentPlanService = new PaymentPlanService(sessionFactory, paymentPlanRepository);
+
+        // Initialize controllers with services
+        this.monthlyPaymentController = new MonthlyPaymentController(monthlyPaymentService);
+        this.paymentController = new PaymentController(paymentService);
+        this.participantController = new ParticipantController(participantService);
+        this.roundController = new RoundController(participantService, roundService);
+        this.groupController = new GroupController(groupService, userService, participantService, paymentPlanService, roundService, paymentService);
+        this.userController = new UserController(userService);
         this.adminMonthPaymentController = new AdminMonthPaymentController();
+        this.paymentPlanController = new PaymentPlanController(paymentPlanService);
 
         // Initialize DemoDataGenerator
-        this.demoDataGenerator = new DemoDataGenerator(roundRepository, paymentRepository, paymentPlanRepository, 
-            monthOptionRepository, paymentOptionRepository);
+        this.demoDataGenerator = new DemoDataGenerator(
+            userService,
+            groupService,
+            participantService,
+            paymentService,
+            paymentPlanService,
+            roundService,
+            monthOptionService,
+            paymentOptionService
+        );
     }
 
     @Override
     public void start(Stage primaryStage) {
         System.out.println("SavingsApplication start method reached.");
         this.primaryStage = primaryStage;
-        
-        // Clear all existing data
-        paymentRepository.deleteAll();
-        participantRepository.deleteAll();
-        groupRepository.deleteAll();
-        userRepository.deleteAll();
-        paymentPlanRepository.deleteAll();
-        monthOptionRepository.deleteAll();
-        paymentOptionRepository.deleteAll();
-        
-        // Generate basic demo data (users, payment plans, options)
-        demoDataGenerator.generateAllDemoData();
-        System.out.println("Demo data generation finished.");
+        try {
+            // Clear all existing data using services
+            paymentService.deleteAll();
+            roundService.deleteAll();
+            participantService.deleteAll();
+            groupService.deleteAll();
+            userService.deleteAll();
+            monthlyPaymentService.deleteAll();
+            paymentOptionService.deleteAll();
+           
+            // Generate basic demo data (users, payment plans, options)
+            demoDataGenerator.generateAllDemoData();
+            System.out.println("Demo data generation finished.");
+        } catch (Exception e) {
+            System.err.println("Error during startup: " + e.getMessage());
+            e.printStackTrace();
+        }
 
-        // Use application logic to match users to groups and create remaining data
-        groupController.matchAndDistribute();
-        
         // Add global CSS styling
         String css = """
             .root {
@@ -342,12 +382,31 @@ public class SavingsApplication extends Application {
             return;
         }
 
-        User user = userRepository.getByUsername(username);
-        if (user != null && user.getPassword().equals(password) && user.getRole() == role) {
-            currentUser = user;
-            showMainMenu();
-        } else {
-            showAlert("Error", "Invalid credentials or role mismatch", Alert.AlertType.ERROR);
+        try {
+            System.out.println("Attempting login with:");
+            System.out.println("Username: " + username);
+            System.out.println("Password: " + password);
+            System.out.println("Role: " + role);
+
+            User user = userService.getUserByUsername(username);
+            System.out.println("Found user: " + (user != null ? user.getUsername() : "null"));
+
+            if (user != null) {
+                System.out.println("User role: " + user.getRole());
+                System.out.println("Password match: " + user.getPassword().equals(password));
+                System.out.println("Role match: " + (user.getRole() == role));
+            }
+
+            if (user != null && user.getPassword().equals(password) && user.getRole() == role) {
+                currentUser = user;
+                showMainMenu();
+            } else {
+                showAlert("Error", "Invalid credentials or role mismatch", Alert.AlertType.ERROR);
+            }
+        } catch (Exception e) {
+            System.err.println("Login error: " + e.getMessage());
+            e.printStackTrace();
+            showAlert("Error", "Login failed: " + e.getMessage(), Alert.AlertType.ERROR);
         }
     }
 
@@ -398,7 +457,7 @@ public class SavingsApplication extends Application {
                     0, // Default number of months
                     role
                 );
-                userRepository.save(newUser);
+                userService.createUser(newUser);
                 showAlert("Success", "Registration successful", Alert.AlertType.INFORMATION);
                 showLoginScreen();
             } catch (Exception ex) {
@@ -454,18 +513,14 @@ public class SavingsApplication extends Application {
         switch (currentUser.getRole()) {
             case ADMIN -> {
                 tabPane.getTabs().addAll(
-                    createGroupManagementTab(),
-                    createPaymentManagementTab(),
-                    createUserManagementTab(),
-                    createMonthPaymentOptionsTab(),
-                    createRoundTab()
+                    createDashboardTab(),  // New combined dashboard tab
+                    createUserManagementTab()  // Keep user management separate
                 );
             }
             case USER -> {
                 tabPane.getTabs().addAll(
-                    createUserGroupsTab(),
-                    createUserPaymentsTab(),
-                    createUserProfileTab()
+                    createUserDashboardTab(),  // New combined user dashboard
+                    createUserProfileTab()  // Keep profile separate
                 );
             }
         }
@@ -476,7 +531,7 @@ public class SavingsApplication extends Application {
         VBox root = new VBox(20);
         root.setPadding(new Insets(20));
         root.getStyleClass().add("vbox");
-        root.setStyle("-fx-background-color: #1976d2;"); // Solid blue background
+        root.setStyle("-fx-background-color: #1976d2;");
 
         Label welcomeLabel = new Label("Welcome, " + currentUser.getUsername());
         welcomeLabel.getStyleClass().add("header-label");
@@ -492,363 +547,281 @@ public class SavingsApplication extends Application {
         primaryStage.setScene(scene);
     }
 
-    private Tab createGroupManagementTab() {
-        Tab tab = new Tab("Group Management");
+    private Tab createDashboardTab() {
+        Tab tab = new Tab("Dashboard");
         VBox content = new VBox(10);
         content.setPadding(new Insets(20));
 
         // Create a header section
-        Label headerLabel = new Label("Group Management");
+        Label headerLabel = new Label("Admin Dashboard");
         headerLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
 
-        // Create buttons section
-        HBox buttonBox = new HBox(10);
-        buttonBox.setAlignment(javafx.geometry.Pos.CENTER);
-        buttonBox.setPadding(new Insets(10));
-        buttonBox.setStyle("-fx-background-color: #f0f0f0; -fx-background-radius: 5;");
+        // Create action buttons section
+        HBox actionButtonsBox = new HBox(10);
+        actionButtonsBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        actionButtonsBox.setPadding(new Insets(10));
         
+        Button showAllGroupsBtn = new Button("Show All Groups");
         Button showActiveGroupsBtn = new Button("Show Active Groups");
-        Button activatePendingGroupsBtn = new Button("Activate Pending Groups");
-        Button viewAllGroupsBtn = new Button("View All Groups");
-        Button clearGroupsBtn = new Button("Clear Table");
+        Button showPendingGroupsBtn = new Button("Show Pending Approval");
+        Button activateAllPendingBtn = new Button("Activate All Pending");
+        Button viewPaymentsBtn = new Button("View All Payments");
+        Button refreshPaymentBtn = new Button("Refresh");
+        Button clearTableBtn = new Button("Clear Table");
+        
+        actionButtonsBox.getChildren().addAll(
+            showAllGroupsBtn,
+            showActiveGroupsBtn,
+            showPendingGroupsBtn,
+            activateAllPendingBtn,
+            viewPaymentsBtn,
+            refreshPaymentBtn,
+            clearTableBtn
+        );
 
-        // Set fixed width for all buttons
-        double buttonWidth = 150;
-        showActiveGroupsBtn.setPrefWidth(buttonWidth);
-        activatePendingGroupsBtn.setPrefWidth(buttonWidth);
-        viewAllGroupsBtn.setPrefWidth(buttonWidth);
-        clearGroupsBtn.setPrefWidth(buttonWidth);
+        // Create filter section
+        HBox filterBox = new HBox(10);
+        filterBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        filterBox.setPadding(new Insets(10));
+        
+        TextField searchField = new TextField();
+        searchField.setPromptText("Search groups...");
+        searchField.setPrefWidth(300);
+        
+        filterBox.getChildren().addAll(
+            new Label("Search:"),
+            searchField
+        );
 
-        buttonBox.getChildren().addAll(showActiveGroupsBtn, activatePendingGroupsBtn, viewAllGroupsBtn, clearGroupsBtn);
-
-        // Create table section
-        Label tableLabel = new Label("Select a group from the table below to manage its status:");
-        TableView<Group> groupTable = new TableView<>();
+        // Create main table
+        TableView<Group> mainTable = new TableView<>();
+        
+        // Basic columns
         TableColumn<Group, String> groupNameCol = new TableColumn<>("Group Name");
         TableColumn<Group, String> statusCol = new TableColumn<>("Status");
         TableColumn<Group, Integer> memberCountCol = new TableColumn<>("Members");
-        TableColumn<Group, String> creatorCol = new TableColumn<>("Creator");
+        TableColumn<Group, String> contributionCol = new TableColumn<>("Monthly Contribution");
+        TableColumn<Group, String> totalAmountCol = new TableColumn<>("Total Amount");
         
         // Set up cell value factories
-        groupNameCol.setCellValueFactory(cellData -> {
-            Group group = cellData.getValue();
-            return new javafx.beans.property.SimpleStringProperty(group.getGroupName());
-        });
-        
-        statusCol.setCellValueFactory(cellData -> {
-            Group group = cellData.getValue();
-            return new javafx.beans.property.SimpleStringProperty(group.getStatus().toString());
-        });
-        
+        groupNameCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getGroupName()));
+        statusCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getStatus().toString()));
         memberCountCol.setCellValueFactory(cellData -> {
             Group group = cellData.getValue();
-            int count = participantRepository.getByGroup(group).size();
-            return new javafx.beans.property.SimpleIntegerProperty(count).asObject();
+            return new SimpleIntegerProperty(participantService.getByGroup(group).size()).asObject();
+        });
+        contributionCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getMonthlyContribution().toString() + " SEK"));
+        totalAmountCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getTotalAmount().toString() + " SEK"));
+
+        mainTable.getColumns().addAll(groupNameCol, statusCol, memberCountCol, contributionCol, totalAmountCol);
+
+        // Add action buttons for selected group
+        HBox selectedGroupActions = new HBox(10);
+        Button activateSelectedBtn = new Button("Activate Selected Group");
+        Button viewDetailsBtn = new Button("View Details");
+        selectedGroupActions.getChildren().addAll(activateSelectedBtn, viewDetailsBtn);
+
+        // Add all components to content
+        content.getChildren().addAll(
+            headerLabel,
+            actionButtonsBox,
+            filterBox,
+            mainTable,
+            selectedGroupActions
+        );
+
+        // Set up button handlers
+        showAllGroupsBtn.setOnAction(e -> {
+            mainTable.getItems().clear();
+            mainTable.getItems().addAll(groupService.getAllActiveGroups());
         });
 
-        creatorCol.setCellValueFactory(cellData -> {
-            Group group = cellData.getValue();
-            return new javafx.beans.property.SimpleStringProperty(group.getCreator().getUsername());
-        });
-
-        groupTable.getColumns().addAll(groupNameCol, statusCol, memberCountCol, creatorCol);
-
-        // Create action buttons section
-        HBox actionBox = new HBox(10);
-        Button manageGroupStatusBtn = new Button("Manage Selected Group Status");
-        manageGroupStatusBtn.setDisable(true); // Initially disabled until a group is selected
-        actionBox.getChildren().add(manageGroupStatusBtn);
-
-        // Add button handlers
         showActiveGroupsBtn.setOnAction(e -> {
-            try {
-                List<Group> activeGroups = groupRepository.getActiveGroups();
-                groupTable.getItems().clear();
-                groupTable.getItems().addAll(activeGroups);
-            } catch (Exception ex) {
-                showAlert("Error", "Failed to load active groups: " + ex.getMessage(), Alert.AlertType.ERROR);
+            mainTable.getItems().clear();
+            mainTable.getItems().addAll(groupService.getAllActiveGroups());
+        });
+
+        showPendingGroupsBtn.setOnAction(e -> {
+            mainTable.getItems().clear();
+            mainTable.getItems().addAll(groupService.getAllPendingApprovalGroups());
+        });
+
+        activateAllPendingBtn.setOnAction(e -> {
+            List<Group> pendingGroups = groupService.getAllPendingApprovalGroups();
+            for (Group group : pendingGroups) {
+                activateGroup(group);
             }
+            showAlert("Success", "Activated " + pendingGroups.size() + " groups", Alert.AlertType.INFORMATION);
+            refreshMainTable(mainTable, "All");
         });
 
-        activatePendingGroupsBtn.setOnAction(e -> {
-            try {
-                List<Group> pendingGroups = groupRepository.getPendingApprovalGroups();
-                if (pendingGroups.isEmpty()) {
-                    showAlert("No Groups to Activate", 
-                        "There are currently no groups eligible for activation. Groups become eligible when they have reached their maximum number of members.", 
-                        Alert.AlertType.INFORMATION);
-                    return;
-                }
-                
-                boolean anyActivated = false;
-                StringBuilder incompleteGroups = new StringBuilder();
-                
-                for (Group group : pendingGroups) {
-                    if (group.getParticipants().size() == group.getMaxMembers()) {
-                        anyActivated = true;
-                        
-                        groupController.initializeGroupPayments(group);
-                    } else {
-                        incompleteGroups.append(String.format("\nGroup '%s': %d/%d members", 
-                            group.getGroupName(), 
-                            group.getParticipants().size(), 
-                            group.getMaxMembers()));
-                    }
-                }
-                
-                if (anyActivated) {
-                    showAlert("Success", "Successfully activated complete groups", Alert.AlertType.INFORMATION);
-                    showActiveGroupsBtn.fire(); // Refresh the table
-                }
-                
-                if (incompleteGroups.length() > 0) {
-                    showAlert("Incomplete Groups", 
-                        "The following groups cannot be activated because they don't have enough members:" + 
-                        incompleteGroups.toString(), 
-                        Alert.AlertType.WARNING);
-                }
-            } catch (Exception ex) {
-                showAlert("Error", "Failed to activate groups: " + ex.getMessage(), Alert.AlertType.ERROR);
-            }
-        });
-
-        viewAllGroupsBtn.setOnAction(e -> {
-            try {
-                List<Group> allGroups = groupRepository.getAll();
-                groupTable.getItems().clear();
-                groupTable.getItems().addAll(allGroups);
-            } catch (Exception ex) {
-                showAlert("Error", "Failed to load groups: " + ex.getMessage(), Alert.AlertType.ERROR);
-            }
-        });
-
-        // Enable/disable manage status button based on selection
-        groupTable.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
-            manageGroupStatusBtn.setDisable(newSelection == null);
-        });
-
-        manageGroupStatusBtn.setOnAction(e -> {
-            Group selectedGroup = groupTable.getSelectionModel().getSelectedItem();
+        activateSelectedBtn.setOnAction(e -> {
+            Group selectedGroup = mainTable.getSelectionModel().getSelectedItem();
             if (selectedGroup == null) {
                 showAlert("Error", "Please select a group first", Alert.AlertType.ERROR);
                 return;
             }
-
-            Dialog<GroupStatus> dialog = new Dialog<>();
-            dialog.setTitle("Change Group Status");
-            dialog.setHeaderText("Select new status for group: " + selectedGroup.getGroupName());
-
-            ButtonType confirmButtonType = new ButtonType("Confirm", ButtonBar.ButtonData.OK_DONE);
-            dialog.getDialogPane().getButtonTypes().addAll(confirmButtonType, ButtonType.CANCEL);
-
-            ComboBox<GroupStatus> statusComboBox = new ComboBox<>();
-            // Only show relevant status options based on current status
-            if (selectedGroup.getStatus() == GroupStatus.WAITING_FOR_MEMBERS) {
-                statusComboBox.getItems().addAll(GroupStatus.WAITING_FOR_MEMBERS, GroupStatus.PENDING_APPROVAL);
-            } else if (selectedGroup.getStatus() == GroupStatus.PENDING_APPROVAL) {
-                statusComboBox.getItems().addAll(GroupStatus.PENDING_APPROVAL, GroupStatus.ACTIVE);
-            } else if (selectedGroup.getStatus() == GroupStatus.ACTIVE) {
-                statusComboBox.getItems().addAll(GroupStatus.ACTIVE, GroupStatus.COMPLETED);
-            } else {
-                statusComboBox.getItems().addAll(GroupStatus.values());
-            }
-            statusComboBox.setValue(selectedGroup.getStatus());
-
-            dialog.getDialogPane().setContent(statusComboBox);
-
-            dialog.setResultConverter(dialogButton -> {
-                if (dialogButton == confirmButtonType) {
-                    GroupStatus newStatus = statusComboBox.getValue();
-                    // Validate status change
-                    if (selectedGroup.getStatus() == GroupStatus.WAITING_FOR_MEMBERS && 
-                        newStatus == GroupStatus.PENDING_APPROVAL && 
-                        selectedGroup.getParticipants().size() < selectedGroup.getMaxMembers()) {
-                        showAlert("Error", "Cannot change status to PENDING_APPROVAL: Group needs " + 
-                            selectedGroup.getMaxMembers() + " members but has only " + 
-                            selectedGroup.getParticipants().size(), Alert.AlertType.ERROR);
-                        return null;
-                    }
-                    return newStatus;
-                }
-                return null;
-            });
-
-            dialog.showAndWait().ifPresent(newStatus -> {
-                try {
-                    selectedGroup.setStatus(newStatus);
-                    groupRepository.update(selectedGroup);
-                    showAlert("Success", "Group status updated", Alert.AlertType.INFORMATION);
-                    viewAllGroupsBtn.fire(); // Refresh the table
-                } catch (Exception ex) {
-                    showAlert("Error", "Failed to update group status: " + ex.getMessage(), Alert.AlertType.ERROR);
-                }
-            });
+            activateGroup(selectedGroup);
+            refreshMainTable(mainTable, "All");
         });
 
-        // Add clear button handler
-        clearGroupsBtn.setOnAction(e -> groupTable.getItems().clear());
+        viewDetailsBtn.setOnAction(e -> {
+            Group selectedGroup = mainTable.getSelectionModel().getSelectedItem();
+            if (selectedGroup == null) {
+                showAlert("Error", "Please select a group first", Alert.AlertType.ERROR);
+                return;
+            }
+            showGroupDetails(selectedGroup);
+        });
 
-        // Add all components to the content
-        content.getChildren().addAll(
-            headerLabel,
-            buttonBox,
-            tableLabel,
-            groupTable,
-            actionBox
-        );
+        viewPaymentsBtn.setOnAction(e -> showAllPaymentsDialog());
+
+        refreshPaymentBtn.setOnAction(e -> refreshMainTable(mainTable, "All"));
+
+        // Add clear table button handler
+        clearTableBtn.setOnAction(e -> {
+            mainTable.getItems().clear();
+        });
+
+        // Set up search filter
+        searchField.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal == null || newVal.isEmpty()) {
+                refreshMainTable(mainTable, "All");
+            } else {
+                mainTable.getItems().removeIf(group -> 
+                    !group.getGroupName().toLowerCase().contains(newVal.toLowerCase()));
+            }
+        });
 
         tab.setContent(content);
         return tab;
     }
 
-    private Tab createPaymentManagementTab() {
-        Tab tab = new Tab("Payment Management");
+    private void showGroupDetails(Group group) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Group Details");
+        dialog.setHeaderText("Details for " + group.getGroupName());
+        dialog.getDialogPane().setPrefSize(1000, 800); // Increased size
+
         VBox content = new VBox(10);
         content.setPadding(new Insets(20));
 
-        // Create header
-        Label headerLabel = new Label("Payment Management");
-        headerLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
-
-        // Create buttons section
-        HBox buttonBox = new HBox(10);
-        buttonBox.setAlignment(javafx.geometry.Pos.CENTER);
-        buttonBox.setPadding(new Insets(10));
-        buttonBox.setStyle("-fx-background-color: #f0f0f0; -fx-background-radius: 5;");
-        
-        Button viewAllPaymentsBtn = new Button("View All Payments");
-        Button viewMonthlyPaymentsBtn = new Button("View Monthly Payments");
-        Button viewLatePaymentsBtn = new Button("View Late Payments");
-        Button processPaymentBtn = new Button("Process Payment");
-        Button clearPaymentsBtn = new Button("Clear Table");
-
-        // Set fixed width for all buttons
-        double buttonWidth = 150;
-        viewAllPaymentsBtn.setPrefWidth(buttonWidth);
-        viewMonthlyPaymentsBtn.setPrefWidth(buttonWidth);
-        viewLatePaymentsBtn.setPrefWidth(buttonWidth);
-        processPaymentBtn.setPrefWidth(buttonWidth);
-        clearPaymentsBtn.setPrefWidth(buttonWidth);
-
-        buttonBox.getChildren().addAll(viewAllPaymentsBtn, viewMonthlyPaymentsBtn, viewLatePaymentsBtn, processPaymentBtn, clearPaymentsBtn);
-
-        // Create table
-        TableView<Payment> paymentTable = new TableView<>();
-        
-        TableColumn<Payment, String> paymentIdCol = new TableColumn<>("Payment ID");
-        paymentIdCol.setCellValueFactory(cellData -> {
-            Payment payment = cellData.getValue();
-            return new javafx.beans.property.SimpleStringProperty(String.valueOf(payment.getId()));
-        });
-
-        TableColumn<Payment, String> amountCol = new TableColumn<>("Amount");
-        amountCol.setCellValueFactory(cellData -> {
-            Payment payment = cellData.getValue();
-            return new javafx.beans.property.SimpleStringProperty(payment.getAmount().toString());
-        });
-
-        TableColumn<Payment, String> statusCol = new TableColumn<>("Status");
-        statusCol.setCellValueFactory(cellData -> {
-            Payment payment = cellData.getValue();
-            return new javafx.beans.property.SimpleStringProperty(payment.getStatus().toString());
-        });
-
-        TableColumn<Payment, String> dueDateCol = new TableColumn<>("Due Date");
-        dueDateCol.setCellValueFactory(cellData -> {
-            Payment payment = cellData.getValue();
-            return new javafx.beans.property.SimpleStringProperty(payment.getDueDate().toString());
-        });
-
-        TableColumn<Payment, String> participantCol = new TableColumn<>("Participant");
-        participantCol.setCellValueFactory(cellData -> {
-            Payment payment = cellData.getValue();
-            return new javafx.beans.property.SimpleStringProperty(payment.getParticipant().getUser().getUsername());
-        });
-
-        paymentTable.getColumns().addAll(paymentIdCol, amountCol, statusCol, dueDateCol, participantCol);
-
-        // Add button handlers
-        viewAllPaymentsBtn.setOnAction(e -> {
-            try {
-                List<Payment> allPayments = paymentRepository.getAll();
-                paymentTable.getItems().clear();
-                paymentTable.getItems().addAll(allPayments);
-            } catch (Exception ex) {
-                showAlert("Error", "Failed to load payments: " + ex.getMessage(), Alert.AlertType.ERROR);
-            }
-        });
-
-        viewMonthlyPaymentsBtn.setOnAction(e -> {
-            try {
-                List<Payment> monthlyPayments = paymentRepository.getMonthlyPayments();
-                paymentTable.getItems().clear();
-                paymentTable.getItems().addAll(monthlyPayments);
-            } catch (Exception ex) {
-                showAlert("Error", "Failed to load monthly payments: " + ex.getMessage(), Alert.AlertType.ERROR);
-            }
-        });
-
-        viewLatePaymentsBtn.setOnAction(e -> {
-            try {
-                List<Payment> latePayments = paymentRepository.getLatePayments();
-                paymentTable.getItems().clear();
-                paymentTable.getItems().addAll(latePayments);
-            } catch (Exception ex) {
-                showAlert("Error", "Failed to load late payments: " + ex.getMessage(), Alert.AlertType.ERROR);
-            }
-        });
-
-        processPaymentBtn.setOnAction(e -> {
-            Payment selectedPayment = paymentTable.getSelectionModel().getSelectedItem();
-            if (selectedPayment == null) {
-                showAlert("Error", "Please select a payment to process", Alert.AlertType.ERROR);
-                return;
-            }
-
-            Dialog<PaymentStatus> dialog = new Dialog<>();
-            dialog.setTitle("Process Payment");
-            dialog.setHeaderText("Update payment status for payment ID: " + selectedPayment.getId());
-
-            ButtonType confirmButtonType = new ButtonType("Confirm", ButtonBar.ButtonData.OK_DONE);
-            dialog.getDialogPane().getButtonTypes().addAll(confirmButtonType, ButtonType.CANCEL);
-
-            ComboBox<PaymentStatus> statusComboBox = new ComboBox<>();
-            statusComboBox.getItems().addAll(PaymentStatus.values());
-            statusComboBox.setValue(selectedPayment.getStatus());
-
-            dialog.getDialogPane().setContent(statusComboBox);
-
-            dialog.setResultConverter(dialogButton -> {
-                if (dialogButton == confirmButtonType) {
-                    return statusComboBox.getValue();
-                }
-                return null;
-            });
-
-            dialog.showAndWait().ifPresent(newStatus -> {
-                try {
-                    selectedPayment.setStatus(newStatus);
-                    paymentRepository.update(selectedPayment);
-                    showAlert("Success", "Payment status updated", Alert.AlertType.INFORMATION);
-                    viewAllPaymentsBtn.fire(); // Refresh the table
-                } catch (Exception ex) {
-                    showAlert("Error", "Failed to update payment status: " + ex.getMessage(), Alert.AlertType.ERROR);
-                }
-            });
-        });
-
-        // Add clear button handler
-        clearPaymentsBtn.setOnAction(e -> paymentTable.getItems().clear());
-
-        // Add all components to the content
+        // Add group details
         content.getChildren().addAll(
-            headerLabel,
-            buttonBox,
-            paymentTable
+            new Label("Group Name: " + group.getGroupName()),
+            new Label("Status: " + group.getStatus()),
+            new Label("Members: " + participantService.getByGroup(group).size()),
+            new Label("Total Amount: " + group.getTotalAmount()),
+            new Label("Monthly Contribution: " + group.getMonthlyContribution())
         );
 
-        tab.setContent(content);
-        return tab;
+        // Add participants table
+        TableView<Participant> participantsTable = new TableView<>();
+        TableColumn<Participant, String> usernameCol = new TableColumn<>("Username");
+        TableColumn<Participant, Integer> turnOrderCol = new TableColumn<>("Turn Order");
+        
+        // Set column widths
+        usernameCol.setPrefWidth(200);
+        turnOrderCol.setPrefWidth(150);
+        
+        usernameCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getUser().getUsername()));
+        turnOrderCol.setCellValueFactory(cellData -> 
+            new SimpleIntegerProperty(cellData.getValue().getTurnOrder()).asObject());
+
+        participantsTable.getColumns().addAll(usernameCol, turnOrderCol);
+        participantsTable.getItems().addAll(participantService.getByGroup( group));
+
+        content.getChildren().add(new Label("Participants:"));
+        content.getChildren().add(participantsTable);
+
+        // Add payments table
+        TableView<Payment> paymentsTable = createPaymentsTable();
+        paymentsTable.getItems().addAll(paymentService.getByGroup(group));
+
+        content.getChildren().add(new Label("Payments:"));
+        content.getChildren().add(paymentsTable);
+
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.show();
+    }
+
+    private void activateGroup(Group group) {
+        try {
+            int maxMembers = group.getMaxMembers();
+            LocalDateTime groupStart = group.getStartDate() != null ? group.getStartDate() : LocalDateTime.now();
+            LocalDateTime groupEnd = groupStart.plusMonths(maxMembers);
+
+            // Create a round for each turn/order
+            List<Round> rounds = new ArrayList<>();
+            for (int i = 1; i <= maxMembers; i++) {
+                Round round = new Round();
+                round.setGroup(group);
+                round.setRoundNumber(i);
+                round.setStatus(RoundStatus.PENDING_APPROVAL);
+                round.setStartDate(groupStart.plusMonths(i - 1));
+                round.setEndDate(groupStart.plusMonths(i));
+                round.setAmount(group.getMonthlyContribution());
+                roundService.createRound(round);
+                rounds.add(round);
+            }
+
+            // Update group status to ACTIVE
+            group.setStatus(GroupStatus.ACTIVE);
+            groupService.updateGroup(group);
+
+            // Get all participants sorted by turn order
+            List<Participant> participants = participantService.getByGroup( group);
+            participants.sort((p1, p2) -> Integer.compare(p1.getTurnOrder(), p2.getTurnOrder()));
+
+            // For each round, set the winner and create payments for all participants
+            for (Round round : rounds) {
+                int roundOrder = round.getRoundNumber();
+                // Set winner for this round (participant with matching turn order)
+                for (Participant participant : participants) {
+                    if (participant.getTurnOrder() == roundOrder) {
+                        round.setWinnerParticipant(participant);
+                        round.setStatus(RoundStatus.ACTIVE);
+                        roundService.updateRound(round);
+                    }
+                }
+                // Create payments for all participants for this round
+                for (Participant participant : participants) {
+                    Payment payment = new Payment();
+                    payment.setGroup(group);
+                    payment.setCreator(participant.getUser());
+                    payment.setAmount(group.getMonthlyContribution());
+                    payment.setStatus(PaymentStatus.PENDING);
+                    payment.setPaymentBy(PaymentBy.USER_PAYMENT);
+                    payment.setCreatedAt(LocalDateTime.now());
+                    payment.setRound(round);
+                    payment.setDueDate(round.getStartDate().plusDays(5)); // Example: due 5 days after round start
+                    payment.setPaymentPlan(group.getPaymentPlan()); // Add payment plan
+                    paymentService.createPayment(payment);
+                }
+            }
+
+            showAlert("Success", "Group " + group.getGroupName() + " activated successfully", Alert.AlertType.INFORMATION);
+        } catch (Exception ex) {
+            showAlert("Error", "Failed to activate group: " + ex.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+
+    private void refreshMainTable(TableView<Group> table, String status) {
+        List<Group> groups;
+        switch (status) {
+            case "Active" -> groups = groupService.getAllActiveGroups();
+            case "Pending" -> groups = groupService.getAllPendingApprovalGroups();
+            case "Waiting" -> groups = groupService.getAllWaitingForMembersGroups();
+            default -> groups = groupService.getAllActiveGroups();
+        }
+        table.getItems().clear();
+        table.getItems().addAll(groups);
     }
 
     private Tab createUserManagementTab() {
@@ -899,7 +872,7 @@ public class SavingsApplication extends Application {
         // Add button handlers
         viewAllUsersBtn.setOnAction(e -> {
             try {
-                List<User> allUsers = userRepository.getAll();
+                List<User> allUsers = userService.getAllUsers();
                 userTable.getItems().clear();
                 userTable.getItems().addAll(allUsers);
             } catch (Exception ex) {
@@ -937,7 +910,7 @@ public class SavingsApplication extends Application {
             dialog.showAndWait().ifPresent(newRole -> {
                 try {
                     selectedUser.setRole(newRole);
-                    userRepository.update(selectedUser);
+                    userService.updateUser(selectedUser);
                     showAlert("Success", "User role updated", Alert.AlertType.INFORMATION);
                     viewAllUsersBtn.fire(); // Refresh the table
                 } catch (Exception ex) {
@@ -960,711 +933,354 @@ public class SavingsApplication extends Application {
         return tab;
     }
 
-    private Tab createMonthPaymentOptionsTab() {
-        Tab tab = new Tab("Month & Payment Options");
+    private Tab createUserDashboardTab() {
+        Tab tab = new Tab("My Dashboard");
         VBox content = new VBox(10);
         content.setPadding(new Insets(20));
 
         // Create header
-        Label headerLabel = new Label("Month & Payment Options Management");
+        Label headerLabel = new Label("My Groups and Payments");
         headerLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
 
-        // Create month options section
-        VBox monthOptionsBox = new VBox(10);
-        Label monthOptionsLabel = new Label("Month Options");
-        monthOptionsLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
-
-        TableView<MonthOption> monthTable = new TableView<>();
-        TableColumn<MonthOption, Long> monthIdCol = new TableColumn<>("ID");
-        TableColumn<MonthOption, Integer> monthCountCol = new TableColumn<>("Months Count");
+        // Create action buttons section
+        HBox actionButtonsBox = new HBox(10);
+        actionButtonsBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        actionButtonsBox.setPadding(new Insets(10));
         
-        monthIdCol.setCellValueFactory(cellData -> {
-            MonthOption option = cellData.getValue();
-            return new javafx.beans.property.SimpleLongProperty(option.getId()).asObject();
-        });
+        Button joinGroupBtn = new Button("Join a Group");
+        Button viewAllGroupsBtn = new Button("View All Groups");
+        Button refreshDashboardBtn = new Button("🔄 Refresh Dashboard");
+        Button clearGroupsBtn = new Button("Clear Groups Table");
+        Button clearPaymentsBtn = new Button("Clear Payments Table");
         
-        monthCountCol.setCellValueFactory(cellData -> {
-            MonthOption option = cellData.getValue();
-            return new javafx.beans.property.SimpleIntegerProperty(option.getMonthsCount()).asObject();
-        });
-
-        monthTable.getColumns().addAll(monthIdCol, monthCountCol);
-
-        HBox monthButtonsBox = new HBox(10);
-        Button addMonthBtn = new Button("Add Month Option");
-        Button editMonthBtn = new Button("Edit Month Option");
-        Button deleteMonthBtn = new Button("Delete Month Option");
-        monthButtonsBox.getChildren().addAll(addMonthBtn, editMonthBtn, deleteMonthBtn);
-
-        // Create payment options section
-        VBox paymentOptionsBox = new VBox(10);
-        Label paymentOptionsLabel = new Label("Payment Options");
-        paymentOptionsLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
-
-        TableView<PaymentOption> paymentTable = new TableView<>();
-        TableColumn<PaymentOption, Long> paymentIdCol = new TableColumn<>("ID");
-        TableColumn<PaymentOption, Integer> paymentAmountCol = new TableColumn<>("Monthly Payment (SEK)");
-        
-        paymentIdCol.setCellValueFactory(cellData -> {
-            PaymentOption option = cellData.getValue();
-            return new javafx.beans.property.SimpleLongProperty(option.getId()).asObject();
-        });
-        
-        paymentAmountCol.setCellValueFactory(cellData -> {
-            PaymentOption option = cellData.getValue();
-            return new javafx.beans.property.SimpleIntegerProperty(option.getMonthlyPayment()).asObject();
-        });
-
-        paymentTable.getColumns().addAll(paymentIdCol, paymentAmountCol);
-
-        HBox paymentButtonsBox = new HBox(10);
-        Button addPaymentBtn = new Button("Add Payment Option");
-        Button editPaymentBtn = new Button("Edit Payment Option");
-        Button deletePaymentBtn = new Button("Delete Payment Option");
-        paymentButtonsBox.getChildren().addAll(addPaymentBtn, editPaymentBtn, deletePaymentBtn);
-
-        // Add button handlers
-        addMonthBtn.setOnAction(e -> {
-            Dialog<Integer> dialog = new Dialog<>();
-            dialog.setTitle("Add Month Option");
-            dialog.setHeaderText("Enter number of months");
-
-            ButtonType addButtonType = new ButtonType("Add", ButtonBar.ButtonData.OK_DONE);
-            dialog.getDialogPane().getButtonTypes().addAll(addButtonType, ButtonType.CANCEL);
-
-            TextField monthsField = new TextField();
-            monthsField.setPromptText("Number of months");
-
-            dialog.getDialogPane().setContent(monthsField);
-
-            dialog.setResultConverter(dialogButton -> {
-                if (dialogButton == addButtonType) {
-                    try {
-                        return Integer.parseInt(monthsField.getText());
-                    } catch (NumberFormatException ex) {
-                        showAlert("Error", "Please enter a valid number", Alert.AlertType.ERROR);
-                        return null;
-                    }
-                }
-                return null;
-            });
-
-            dialog.showAndWait().ifPresent(months -> {
-                try {
-                    MonthOption newOption = new MonthOption(months);
-                    monthOptionRepository.save(newOption);
-                    refreshMonthOptions(monthTable);
-                    showAlert("Success", "Month option added successfully", Alert.AlertType.INFORMATION);
-                } catch (Exception ex) {
-                    showAlert("Error", "Failed to add month option: " + ex.getMessage(), Alert.AlertType.ERROR);
-                }
-            });
-        });
-
-        editMonthBtn.setOnAction(e -> {
-            MonthOption selected = monthTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                showAlert("Error", "Please select a month option to edit", Alert.AlertType.ERROR);
-                return;
-            }
-
-            Dialog<Integer> dialog = new Dialog<>();
-            dialog.setTitle("Edit Month Option");
-            dialog.setHeaderText("Enter new number of months");
-
-            ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
-            dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
-
-            TextField monthsField = new TextField(String.valueOf(selected.getMonthsCount()));
-            monthsField.setPromptText("Number of months");
-
-            dialog.getDialogPane().setContent(monthsField);
-
-            dialog.setResultConverter(dialogButton -> {
-                if (dialogButton == saveButtonType) {
-                    try {
-                        return Integer.parseInt(monthsField.getText());
-                    } catch (NumberFormatException ex) {
-                        showAlert("Error", "Please enter a valid number", Alert.AlertType.ERROR);
-                        return null;
-                    }
-                }
-                return null;
-            });
-
-            dialog.showAndWait().ifPresent(months -> {
-                try {
-                    selected.setMonthsCount(months);
-                    monthOptionRepository.update(selected);
-                    refreshMonthOptions(monthTable);
-                    showAlert("Success", "Month option updated successfully", Alert.AlertType.INFORMATION);
-                } catch (Exception ex) {
-                    showAlert("Error", "Failed to update month option: " + ex.getMessage(), Alert.AlertType.ERROR);
-                }
-            });
-        });
-
-        deleteMonthBtn.setOnAction(e -> {
-            MonthOption selected = monthTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                showAlert("Error", "Please select a month option to delete", Alert.AlertType.ERROR);
-                return;
-            }
-
-            Alert confirmDialog = new Alert(Alert.AlertType.CONFIRMATION);
-            confirmDialog.setTitle("Confirm Delete");
-            confirmDialog.setHeaderText("Delete Month Option");
-            confirmDialog.setContentText("Are you sure you want to delete this month option?");
-
-            confirmDialog.showAndWait().ifPresent(response -> {
-                if (response == ButtonType.OK) {
-                    try {
-                        monthOptionRepository.deleteById(selected.getId());
-                        refreshMonthOptions(monthTable);
-                        showAlert("Success", "Month option deleted successfully", Alert.AlertType.INFORMATION);
-                    } catch (Exception ex) {
-                        showAlert("Error", "Failed to delete month option: " + ex.getMessage(), Alert.AlertType.ERROR);
-                    }
-                }
-            });
-        });
-
-        addPaymentBtn.setOnAction(e -> {
-            Dialog<Integer> dialog = new Dialog<>();
-            dialog.setTitle("Add Payment Option");
-            dialog.setHeaderText("Enter monthly payment amount in SEK");
-
-            ButtonType addButtonType = new ButtonType("Add", ButtonBar.ButtonData.OK_DONE);
-            dialog.getDialogPane().getButtonTypes().addAll(addButtonType, ButtonType.CANCEL);
-
-            TextField amountField = new TextField();
-            amountField.setPromptText("Monthly payment amount");
-
-            dialog.getDialogPane().setContent(amountField);
-
-            dialog.setResultConverter(dialogButton -> {
-                if (dialogButton == addButtonType) {
-                    try {
-                        return Integer.parseInt(amountField.getText());
-                    } catch (NumberFormatException ex) {
-                        showAlert("Error", "Please enter a valid number", Alert.AlertType.ERROR);
-                        return null;
-                    }
-                }
-                return null;
-            });
-
-            dialog.showAndWait().ifPresent(amount -> {
-                try {
-                    PaymentOption newOption = new PaymentOption(amount);
-                    paymentOptionRepository.save(newOption);
-                    refreshPaymentOptions(paymentTable);
-                    showAlert("Success", "Payment option added successfully", Alert.AlertType.INFORMATION);
-                } catch (Exception ex) {
-                    showAlert("Error", "Failed to add payment option: " + ex.getMessage(), Alert.AlertType.ERROR);
-                }
-            });
-        });
-
-        editPaymentBtn.setOnAction(e -> {
-            PaymentOption selected = paymentTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                showAlert("Error", "Please select a payment option to edit", Alert.AlertType.ERROR);
-                return;
-            }
-
-            Dialog<Integer> dialog = new Dialog<>();
-            dialog.setTitle("Edit Payment Option");
-            dialog.setHeaderText("Enter new monthly payment amount in SEK");
-
-            ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
-            dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
-
-            TextField amountField = new TextField(String.valueOf(selected.getMonthlyPayment()));
-            amountField.setPromptText("Monthly payment amount");
-
-            dialog.getDialogPane().setContent(amountField);
-
-            dialog.setResultConverter(dialogButton -> {
-                if (dialogButton == saveButtonType) {
-                    try {
-                        return Integer.parseInt(amountField.getText());
-                    } catch (NumberFormatException ex) {
-                        showAlert("Error", "Please enter a valid number", Alert.AlertType.ERROR);
-                        return null;
-                    }
-                }
-                return null;
-            });
-
-            dialog.showAndWait().ifPresent(amount -> {
-                try {
-                    selected.setMonthlyPayment(amount);
-                    paymentOptionRepository.update(selected);
-                    refreshPaymentOptions(paymentTable);
-                    showAlert("Success", "Payment option updated successfully", Alert.AlertType.INFORMATION);
-                } catch (Exception ex) {
-                    showAlert("Error", "Failed to update payment option: " + ex.getMessage(), Alert.AlertType.ERROR);
-                }
-            });
-        });
-
-        deletePaymentBtn.setOnAction(e -> {
-            PaymentOption selected = paymentTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                showAlert("Error", "Please select a payment option to delete", Alert.AlertType.ERROR);
-                return;
-            }
-
-            Alert confirmDialog = new Alert(Alert.AlertType.CONFIRMATION);
-            confirmDialog.setTitle("Confirm Delete");
-            confirmDialog.setHeaderText("Delete Payment Option");
-            confirmDialog.setContentText("Are you sure you want to delete this payment option?");
-
-            confirmDialog.showAndWait().ifPresent(response -> {
-                if (response == ButtonType.OK) {
-                    try {
-                        paymentOptionRepository.deleteById(selected.getId());
-                        refreshPaymentOptions(paymentTable);
-                        showAlert("Success", "Payment option deleted successfully", Alert.AlertType.INFORMATION);
-                    } catch (Exception ex) {
-                        showAlert("Error", "Failed to delete payment option: " + ex.getMessage(), Alert.AlertType.ERROR);
-                    }
-                }
-            });
-        });
-
-        // Add refresh buttons
-        Button refreshMonthBtn = new Button("Refresh Month Options");
-        Button refreshPaymentBtn = new Button("Refresh Payment Options");
-        
-        refreshMonthBtn.setOnAction(e -> refreshMonthOptions(monthTable));
-        refreshPaymentBtn.setOnAction(e -> refreshPaymentOptions(paymentTable));
-
-        // Add all components to the content
-        monthOptionsBox.getChildren().addAll(
-            monthOptionsLabel,
-            monthTable,
-            monthButtonsBox,
-            refreshMonthBtn
+        actionButtonsBox.getChildren().addAll(
+            joinGroupBtn,
+            viewAllGroupsBtn,
+            refreshDashboardBtn,
+            clearGroupsBtn,
+            clearPaymentsBtn
         );
 
-        paymentOptionsBox.getChildren().addAll(
-            paymentOptionsLabel,
-            paymentTable,
-            paymentButtonsBox,
-            refreshPaymentBtn
-        );
-
-        content.getChildren().addAll(
-            headerLabel,
-            monthOptionsBox,
-            paymentOptionsBox
-        );
-
-        // Initial load of data
-        refreshMonthOptions(monthTable);
-        refreshPaymentOptions(paymentTable);
-
-        tab.setContent(content);
-        return tab;
-    }
-
-    private void refreshMonthOptions(TableView<MonthOption> table) {
-        try {
-            List<MonthOption> options = monthOptionRepository.getAll();
-            table.getItems().clear();
-            table.getItems().addAll(options);
-        } catch (Exception ex) {
-            showAlert("Error", "Failed to load month options: " + ex.getMessage(), Alert.AlertType.ERROR);
-        }
-    }
-
-    private void refreshPaymentOptions(TableView<PaymentOption> table) {
-        try {
-            List<PaymentOption> options = paymentOptionRepository.getAllMonthlyPayments();
-            table.getItems().clear();
-            table.getItems().addAll(options);
-        } catch (Exception ex) {
-            showAlert("Error", "Failed to load payment options: " + ex.getMessage(), Alert.AlertType.ERROR);
-        }
-    }
-
-    private Tab createUserGroupsTab() {
-        Tab tab = new Tab("My Groups");
-        VBox content = new VBox(10);
-        content.setPadding(new Insets(20));
-
-        Button viewMyGroupsBtn = new Button("View My Groups");
-        Button joinGroupBtn = new Button("Join Group");
-        Button clearMyGroupsBtn = new Button("Clear Table");
-
-        HBox buttonRow = new HBox(15);
-        buttonRow.setAlignment(javafx.geometry.Pos.CENTER);
-        buttonRow.getChildren().addAll(viewMyGroupsBtn, joinGroupBtn, clearMyGroupsBtn);
-
-        // Main group table
-        TableView<Group> groupTable = new TableView<>();
+        // Create groups table
+        TableView<Group> groupsTable = new TableView<>();
+        
         TableColumn<Group, String> groupNameCol = new TableColumn<>("Group Name");
         TableColumn<Group, String> statusCol = new TableColumn<>("Status");
         TableColumn<Group, String> contributionCol = new TableColumn<>("Monthly Contribution");
-        TableColumn<Group, String> membersCol = new TableColumn<>("Members");
-        TableColumn<Group, String> currentMonthCol = new TableColumn<>("Current Month");
-        groupTable.getColumns().addAll(groupNameCol, statusCol, contributionCol, membersCol, currentMonthCol);
+        TableColumn<Group, String> totalAmountCol = new TableColumn<>("Total Amount");
 
-        // Set up cell value factories
-        groupNameCol.setCellValueFactory(cellData -> new SimpleStringProperty(cellData.getValue().getGroupName()));
-        statusCol.setCellValueFactory(cellData -> new SimpleStringProperty(cellData.getValue().getStatus().toString()));
-        contributionCol.setCellValueFactory(cellData -> new SimpleStringProperty(cellData.getValue().getMonthlyContribution().toString()));
-        membersCol.setCellValueFactory(cellData -> {
-            Group group = cellData.getValue();
-            return new SimpleStringProperty(group.getParticipants().size() + "/" + group.getMaxMembers());
-        });
-        currentMonthCol.setCellValueFactory(cellData -> {
-            Group group = cellData.getValue();
-            if (group.getStatus() == GroupStatus.ACTIVE) {
-                long monthsSinceStart = java.time.temporal.ChronoUnit.MONTHS.between(
-                    group.getStartDate(), LocalDateTime.now());
-                return new SimpleStringProperty(String.valueOf(monthsSinceStart + 1));
+        // Set column widths
+        groupNameCol.setPrefWidth(250);
+        statusCol.setPrefWidth(150);
+        contributionCol.setPrefWidth(200);
+        totalAmountCol.setPrefWidth(200);
+
+        groupNameCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getGroupName()));
+        statusCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getStatus().toString()));
+        contributionCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getMonthlyContribution().toString() + " SEK"));
+        totalAmountCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getTotalAmount().toString() + " SEK"));
+
+        groupsTable.getColumns().addAll(groupNameCol, statusCol, contributionCol, totalAmountCol);
+
+        // Load user's groups
+        List<Group> userGroups = groupService.getByMember(currentUser.getId());
+        groupsTable.getItems().addAll(userGroups);
+
+        // Create current payments table
+        TableView<Payment> currentPaymentsTable = createPaymentsTable();
+
+        // Create future payments table
+        TableView<Payment> futurePaymentsTable = createPaymentsTable();
+
+        // Create refresh button with icon
+        refreshDashboardBtn.setStyle("-fx-font-size: 14px; -fx-padding: 8px 16px;");
+        refreshDashboardBtn.setOnAction(e -> {
+            // Refresh groups
+            groupsTable.getItems().clear();
+            List<Group> freshUserGroups = groupService.getByMember(currentUser.getId());
+            groupsTable.getItems().addAll(freshUserGroups);
+            
+            // Refresh payments
+            currentPaymentsTable.getItems().clear();
+            futurePaymentsTable.getItems().clear();
+            
+            // Get all payments for the user's groups
+            List<Participant> userParticipants = participantService.getByUser(currentUser);
+            List<Payment> userPayments = new ArrayList<>();
+            for (Participant participant : userParticipants) {
+                userPayments.addAll(paymentService.getByGroupAndParticipant(participant.getGroup(), participant));
             }
-            return new SimpleStringProperty("N/A");
+            
+            LocalDateTime now = LocalDateTime.now();
+            
+            // Split payments into current and future
+            List<Payment> currentPayments = userPayments.stream()
+                .filter(p -> p.getDueDate().isBefore(now) || p.getDueDate().isEqual(now))
+                .collect(Collectors.toList());
+                
+            List<Payment> futurePayments = userPayments.stream()
+                .filter(p -> p.getDueDate().isAfter(now))
+                .collect(Collectors.toList());
+
+            currentPaymentsTable.getItems().addAll(currentPayments);
+            futurePaymentsTable.getItems().addAll(futurePayments);
         });
+
+        // Load initial payments
+        List<Participant> userParticipants = participantService.getByUser(currentUser);
+        List<Payment> userPayments = new ArrayList<>();
+        for (Participant participant : userParticipants) {
+            userPayments.addAll(paymentService.getByGroupAndParticipant(participant.getGroup(), participant));
+        }
+        
+        LocalDateTime now = LocalDateTime.now();
+            
+        // Split payments into current and future
+        List<Payment> currentPayments = userPayments.stream()
+            .filter(p -> p.getDueDate().isBefore(now) || p.getDueDate().isEqual(now))
+            .collect(Collectors.toList());
+            
+        List<Payment> futurePayments = userPayments.stream()
+            .filter(p -> p.getDueDate().isAfter(now))
+            .collect(Collectors.toList());
+
+        currentPaymentsTable.getItems().addAll(currentPayments);
+        futurePaymentsTable.getItems().addAll(futurePayments);
 
         // Add button handlers
-        viewMyGroupsBtn.setOnAction(e -> {
-            try {
-                List<Group> userGroups = groupRepository.getByMember(currentUser.getId());
-                groupTable.getItems().clear();
-                groupTable.getItems().addAll(userGroups);
-            } catch (Exception ex) {
-                showAlert("Error", "Failed to load groups: " + ex.getMessage(), Alert.AlertType.ERROR);
-            }
+        joinGroupBtn.setOnAction(e -> showJoinGroupDialog());
+        
+        viewAllGroupsBtn.setOnAction(e -> {
+            groupsTable.getItems().clear();
+            groupsTable.getItems().addAll(groupService.getByMember(currentUser.getId()));
+        });
+        
+        clearGroupsBtn.setOnAction(e -> {
+            groupsTable.getItems().clear();
         });
 
-        joinGroupBtn.setOnAction(e -> {
-            try {
-                // Get all available month options
-                List<MonthOption> monthOptions = monthOptionRepository.getAll();
-                if (monthOptions.isEmpty()) {
-                    showAlert("Info", "No month options available. Please contact an administrator.", Alert.AlertType.INFORMATION);
-                    return;
-                }
-
-                // Get all available payment options
-                List<PaymentOption> paymentOptions = paymentOptionRepository.getAllMonthlyPayments();
-                if (paymentOptions.isEmpty()) {
-                    showAlert("Info", "No payment options available. Please contact an administrator.", Alert.AlertType.INFORMATION);
-                    return;
-                }
-
-                // Create dialog for month and payment selection
-                Dialog<Pair<MonthOption, PaymentOption>> dialog = new Dialog<>();
-                dialog.setTitle("Join Group");
-                dialog.setHeaderText("Select Month and Payment Options");
-
-                ButtonType joinButtonType = new ButtonType("Join", ButtonBar.ButtonData.OK_DONE);
-                dialog.getDialogPane().getButtonTypes().addAll(joinButtonType, ButtonType.CANCEL);
-
-                // Create month options table
-                TableView<MonthOption> monthTable = new TableView<>();
-                TableColumn<MonthOption, String> monthCountCol = new TableColumn<>("Months");
-                monthCountCol.setCellValueFactory(cellData -> 
-                    new SimpleStringProperty(String.valueOf(cellData.getValue().getMonthsCount())));
-                monthTable.getColumns().add(monthCountCol);
-                monthTable.getItems().addAll(monthOptions);
-
-                // Create payment options table
-                TableView<PaymentOption> paymentTable = new TableView<>();
-                TableColumn<PaymentOption, String> paymentAmountCol = new TableColumn<>("Monthly Payment (SEK)");
-                paymentAmountCol.setCellValueFactory(cellData -> 
-                    new SimpleStringProperty(String.valueOf(cellData.getValue().getMonthlyPayment())));
-                paymentTable.getColumns().add(paymentAmountCol);
-                paymentTable.getItems().addAll(paymentOptions);
-
-                // Create horizontal layout for tables
-                HBox tablesBox = new HBox(20); // 20 pixels spacing between tables
-                tablesBox.setPadding(new Insets(10));
-                
-                // Create VBox containers for each table with their labels
-                VBox monthBox = new VBox(10);
-                monthBox.getChildren().addAll(
-                    new Label("Select Number of Months:"),
-                    monthTable
-                );
-                
-                VBox paymentBox = new VBox(10);
-                paymentBox.getChildren().addAll(
-                    new Label("Select Monthly Payment:"),
-                    paymentTable
-                );
-                
-                // Add both boxes to the horizontal layout
-                tablesBox.getChildren().addAll(monthBox, paymentBox);
-                
-                // Set the dialog content
-                dialog.getDialogPane().setContent(tablesBox);
-
-                // Convert result to Pair<MonthOption, PaymentOption>
-                dialog.setResultConverter(dialogButton -> {
-                    if (dialogButton == joinButtonType) {
-                        MonthOption selectedMonth = monthTable.getSelectionModel().getSelectedItem();
-                        PaymentOption selectedPayment = paymentTable.getSelectionModel().getSelectedItem();
-                        if (selectedMonth != null && selectedPayment != null) {
-                            return new Pair<>(selectedMonth, selectedPayment);
-                        }
-                    }
-                    return null;
-                });
-
-                // Handle the result
-                dialog.showAndWait().ifPresent(result -> {
-                    try {
-                        MonthOption selectedMonth = result.getKey();
-                        PaymentOption selectedPayment = result.getValue();
-
-                        // Find or create a matching group
-                        PaymentPlan paymentPlan = new PaymentPlan();
-                        paymentPlan.setMonthsCount(selectedMonth.getMonthsCount());
-                        paymentPlan.setMonthlyPayment(new BigDecimal(selectedPayment.getMonthlyPayment()));
-                        
-                        // Save the payment plan first
-                        paymentPlanRepository.save(paymentPlan);
-                        
-                        List<Group> matchingGroups = groupRepository.findAvailableGroupsByPaymentPlan(
-                            paymentPlan,
-                            GroupStatus.WAITING_FOR_MEMBERS
-                        );
-
-                        Group selectedGroup;
-                        if (matchingGroups.isEmpty()) {
-                            // Create new group
-                            selectedGroup = new Group();
-                            selectedGroup.setMonthlyContribution(new BigDecimal(selectedPayment.getMonthlyPayment()));
-                            selectedGroup.setMaxMembers(selectedMonth.getMonthsCount());
-                            selectedGroup.setStatus(GroupStatus.WAITING_FOR_MEMBERS);
-                            selectedGroup.setPaymentBy(PaymentBy.USER_PAYMENT);
-                            selectedGroup.setStartDate(java.time.LocalDateTime.now());
-                            selectedGroup.setEndDate(java.time.LocalDateTime.now().plusMonths(selectedMonth.getMonthsCount()));
-                            selectedGroup.setTotalAmount(new BigDecimal(selectedPayment.getMonthlyPayment()).multiply(new BigDecimal(selectedMonth.getMonthsCount())));
-                            selectedGroup.setGroupName(selectedGroup.generateGroupName(selectedGroup.getStartDate(), selectedGroup.getEndDate(), selectedGroup.getTotalAmount()));
-                            selectedGroup.setCreator(currentUser);
-                            selectedGroup.setPaymentPlan(paymentPlan);
-                            groupRepository.save(selectedGroup);
-                        } else {
-                            // Use existing group
-                            selectedGroup = matchingGroups.get(0);
-                        }
-                        List<Participant> participants = selectedGroup.getParticipants();
-                        List<Integer> takenTurnOrder = new ArrayList<>();
-                        for (Participant p : participants) {
-                            takenTurnOrder.add(p.getTurnOrder());
-                        }
-                        List<Integer> availableTurnOrders = new ArrayList<>();
-                        for (int i = 1; i <= selectedGroup.getMaxMembers(); i++) {
-                            if (!takenTurnOrder.contains(i)) {
-                                availableTurnOrders.add(i);
-                            }
-                        }
-
-                        // Show dialog for turn order selection
-                        ChoiceDialog<Integer> turnOrderDialog = new ChoiceDialog<>(availableTurnOrders.get(0), availableTurnOrders);
-                        turnOrderDialog.setTitle("Select Turn Order");
-                        turnOrderDialog.setHeaderText("Available Turn Orders");
-                        turnOrderDialog.setContentText("Choose your turn order:");
-
-                        Optional<Integer> selectedTurnOrder = turnOrderDialog.showAndWait();
-                        if (selectedTurnOrder.isEmpty()) {
-                            showAlert("Error", "Turn order selection cancelled", Alert.AlertType.ERROR);
-                            return;
-                        }
-
-                        int turnOrder = selectedTurnOrder.get();
-                        
-                        // Use GroupController to add user to group as participant
-                        try {
-                            groupController.addUserToGroupAsParticipant(selectedGroup, currentUser, selectedGroup.getPaymentPlan(), turnOrder);
-                            showAlert("Success", "Successfully joined group: " + selectedGroup.getGroupName(), Alert.AlertType.INFORMATION);
-                            viewMyGroupsBtn.fire(); // Refresh the groups table
-                        } catch (Exception ex) {
-                            showAlert("Error", "Failed to join group: " + ex.getMessage(), Alert.AlertType.ERROR);
-                        }
-                    } catch (Exception ex) {
-                        showAlert("Error", "Failed to load options: " + ex.getMessage(), Alert.AlertType.ERROR);
-                    }
-                });
-            } catch (Exception ex) {
-                showAlert("Error", "Failed to load options: " + ex.getMessage(), Alert.AlertType.ERROR);
-            }
+        clearPaymentsBtn.setOnAction(e -> {
+            currentPaymentsTable.getItems().clear();
+            futurePaymentsTable.getItems().clear();
         });
 
-        // Add clear button handler
-        clearMyGroupsBtn.setOnAction(e -> {
-            groupTable.getItems().clear();
-        });
-
-        // Add all components to the content
+        // Add all components to content
         content.getChildren().addAll(
-            buttonRow,
+            headerLabel,
+            actionButtonsBox,
             new Label("My Groups"),
-            groupTable
+            groupsTable,
+            new Label("Current Payments"),
+            refreshDashboardBtn,
+            currentPaymentsTable,
+            new Label("Future Payments"),
+            futurePaymentsTable
         );
 
         tab.setContent(content);
         return tab;
     }
 
-    private Tab createUserPaymentsTab() {
-        Tab tab = new Tab("My Payments");
-        VBox content = new VBox(10);
-        content.setPadding(new Insets(20));
+    private void showJoinGroupDialog() {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Join a Group");
+        dialog.setHeaderText("Select your preferences");
 
-        // Create buttons
-        Button viewMyPaymentsBtn = new Button("View My Payments");
-        Button viewFuturePaymentsBtn = new Button("View Future Payments");
-        Button viewFutureReceivingBtn = new Button("View Future Receiving");
-        Button clearMyPaymentsBtn = new Button("Clear Table");
+        // Create the custom dialog content
+        VBox dialogContent = new VBox(10);
+        dialogContent.setPadding(new Insets(20));
 
-        HBox buttonRow = new HBox(15);
-        buttonRow.setAlignment(javafx.geometry.Pos.CENTER);
-        buttonRow.getChildren().addAll(viewMyPaymentsBtn, viewFuturePaymentsBtn, viewFutureReceivingBtn, clearMyPaymentsBtn);
+        // Month options
+        Label monthLabel = new Label("Select Number of Months:");
+        ComboBox<MonthOption> monthComboBox = new ComboBox<>();
+        monthComboBox.getItems().addAll(monthOptionService.getAll());
+        monthComboBox.setConverter(new StringConverter<MonthOption>() {
+            @Override
+            public String toString(MonthOption option) {
+                return option != null ? option.getMonthsCount() + " months" : "";
+            }
 
-        // Create table
-        TableView<Payment> paymentTable = new TableView<>();
-        
-        // Add columns
-        TableColumn<Payment, String> groupNameCol = new TableColumn<>("Group");
-        groupNameCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getGroup().getGroupName()));
-        
-        TableColumn<Payment, String> amountCol = new TableColumn<>("Amount (SEK)");
-        amountCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getAmount().toString()));
-        
-        TableColumn<Payment, String> dueDateCol = new TableColumn<>("Due Date");
-        dueDateCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getDueDate().toString()));
-        
-        TableColumn<Payment, String> statusCol = new TableColumn<>("Status");
-        statusCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getStatus().toString()));
-        
-        TableColumn<Payment, String> typeCol = new TableColumn<>("Type");
-        typeCol.setCellValueFactory(cellData -> {
-            Payment payment = cellData.getValue();
-            return new SimpleStringProperty(payment.getPaymentBy().toString());
+            @Override
+            public MonthOption fromString(String string) {
+                return null;
+            }
         });
 
-        paymentTable.getColumns().addAll(groupNameCol, amountCol, dueDateCol, statusCol, typeCol);
+        // Payment options
+        Label paymentLabel = new Label("Select Monthly Payment:");
+        ComboBox<PaymentOption> paymentComboBox = new ComboBox<>();
+        paymentComboBox.getItems().addAll(paymentOptionService.getAll());
+        paymentComboBox.setConverter(new StringConverter<PaymentOption>() {
+            @Override
+            public String toString(PaymentOption option) {
+                return option != null ? option.getMonthlyPayment() + " SEK" : "";
+            }
 
-        // Add button handlers
-        viewMyPaymentsBtn.setOnAction(e -> {
-            try {
-                // Get all groups where the user is a participant
-                List<Group> userGroups = groupRepository.getByMember(currentUser.getId());
-                List<Payment> allPayments = new ArrayList<>();
+            @Override
+            public PaymentOption fromString(String string) {
+                return null;
+            }
+        });
+
+        // Turn order selection
+        Label turnOrderLabel = new Label("Select Preferred Turn Order:");
+        ComboBox<Integer> turnOrderComboBox = new ComboBox<>();
+        turnOrderComboBox.setPromptText("Select turn order");
+        
+        // Update turn order options when month option changes
+        monthComboBox.setOnAction(e -> {
+            MonthOption selected = monthComboBox.getValue();
+            if (selected != null) {
+                turnOrderComboBox.getItems().clear();
+                for (int i = 1; i <= selected.getMonthsCount(); i++) {
+                    turnOrderComboBox.getItems().add(i);
+                }
+            }
+        });
+
+        // Update turn order options when payment option changes
+        paymentComboBox.setOnAction(e -> {
+            MonthOption selectedMonth = monthComboBox.getValue();
+            PaymentOption selectedPayment = paymentComboBox.getValue();
+            
+            if (selectedMonth != null && selectedPayment != null) {
+                // Create temporary payment plan to find matching groups
+                PaymentPlan tempPlan = new PaymentPlan();
+                tempPlan.setMonthsCount(selectedMonth.getMonthsCount());
+                tempPlan.setMonthlyPayment(java.math.BigDecimal.valueOf(selectedPayment.getMonthlyPayment()));
                 
-                for (Group group : userGroups) {
-                    // Get the participant for this user in this group
-                    Participant participant = participantRepository.getByUserAndGroup(currentUser, group);
-                    if (participant != null) {
-                        // Get all payments for this participant
-                        List<Payment> participantPayments = paymentRepository.getByParticipant(participant.getId());
-                        allPayments.addAll(participantPayments);
+                // Find matching groups
+                List<Group> matchingGroups = groupService.findAvailableGroupsByPaymentPlan( tempPlan, GroupStatus.WAITING_FOR_MEMBERS);
+                
+                if (!matchingGroups.isEmpty()) {
+                    // If there's an existing group, show only available turn orders
+                    Group existingGroup = matchingGroups.get(0);
+                    List<Participant> existingParticipants = participantService.getByGroup(existingGroup);
+                    Set<Integer> takenTurnOrders = existingParticipants.stream()
+                        .map(Participant::getTurnOrder)
+                        .collect(Collectors.toSet());
+                    
+                    turnOrderComboBox.getItems().clear();
+                    for (int i = 1; i <= selectedMonth.getMonthsCount(); i++) {
+                        if (!takenTurnOrders.contains(i)) {
+                            turnOrderComboBox.getItems().add(i);
+                        }
+                    }
+                    
+                    if (turnOrderComboBox.getItems().isEmpty()) {
+                        showAlert("Information", "This group is full. Please select different options.", Alert.AlertType.INFORMATION);
+                    }
+                } else {
+                    // If no existing group, show all turn orders
+                    turnOrderComboBox.getItems().clear();
+                    for (int i = 1; i <= selectedMonth.getMonthsCount(); i++) {
+                        turnOrderComboBox.getItems().add(i);
                     }
                 }
-                
-                paymentTable.getItems().clear();
-                paymentTable.getItems().addAll(allPayments);
-            } catch (Exception ex) {
-                showAlert("Error", "Failed to load payments: " + ex.getMessage(), Alert.AlertType.ERROR);
             }
         });
 
-            viewFuturePaymentsBtn.setOnAction(e -> {
-                try {
-                    // Get all groups where the user is a participant
-                    List<Group> userGroups = groupRepository.getByMember(currentUser.getId());
-                    List<Payment> futurePayments = new ArrayList<>();
-                    
-                    for (Group group : userGroups) {
-                    //    if (group.getStatus() == GroupStatus.PENDING_APPROVAL) {
-                            System.out.println("Group ID: " + group.getId() + ", Status: " + group.getStatus());
+        // Add buttons
+        ButtonType joinButtonType = new ButtonType("Join", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(joinButtonType, ButtonType.CANCEL);
 
-                            // Get the participant for this user in this group
-                            Participant participant = participantRepository.getByUserAndGroup(currentUser, group);
-                            if (participant != null) {
-                                // Get all future rounds for this group
-                                List<Round> futureRounds = roundRepository.getAllRoundsByGroupId(group.getId());
-                                for (Round round : futureRounds) {
-                                    // Get the actual payment record for this round
-                                    Payment payment = paymentRepository.getByParticipantAndRound(participant.getId(), round.getId());
-                                    if (payment != null) {
-                                        futurePayments.add(payment);
-                                    }
-                                }
-                //            }
-                        }
+        // Add components to content
+        dialogContent.getChildren().addAll(
+            monthLabel,
+            monthComboBox,
+            paymentLabel,
+            paymentComboBox,
+            turnOrderLabel,
+            turnOrderComboBox
+        );
+
+        dialog.getDialogPane().setContent(dialogContent);
+
+        // --- Refactored join logic using GroupService ---
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == joinButtonType) {
+                MonthOption selectedMonthOption = monthComboBox.getValue();
+                PaymentOption selectedPaymentOption = paymentComboBox.getValue();
+                Integer selectedTurnOrder = turnOrderComboBox.getValue();
+
+                if (selectedMonthOption == null || selectedPaymentOption == null || selectedTurnOrder == null) {
+                    showAlert("Error", "Please select all options (months, payment, and turn order)", Alert.AlertType.ERROR);
+                    return null;
                 }
-                System.out.println("Payments found: " + futurePayments.size());
 
-                
-                paymentTable.getItems().clear();
-                paymentTable.getItems().addAll(futurePayments);
-            } catch (Exception ex) {
-                showAlert("Error", "Failed to load future payments: " + ex.getMessage(), Alert.AlertType.ERROR);
-            }
-        });
+                try {
+                    // Use GroupService for all group/participant logic
+                    PaymentPlan paymentPlan = new PaymentPlan();
+                    paymentPlan.setMonthsCount(selectedMonthOption.getMonthsCount());
+                    paymentPlan.setMonthlyPayment(java.math.BigDecimal.valueOf(selectedPaymentOption.getMonthlyPayment()));
 
-        viewFutureReceivingBtn.setOnAction(e -> {
-            try {
-                // Get all groups where the user is a participant
-                List<Group> userGroups = groupRepository.getByMember(currentUser.getId());
-                List<Payment> futureReceiving = new ArrayList<>();
-                
-                for (Group group : userGroups) {
-                    if (group.getStatus() == GroupStatus.ACTIVE) {
-                        // Get the participant for this user in this group
-                        Participant participant = participantRepository.getByUserAndGroup(currentUser, group);
-                        if (participant != null) {
-                            // Get all future rounds where this participant will receive money
-                            List<Round> futureRounds = roundRepository.getFutureRoundsByGroup(group.getId());
-                            for (Round round : futureRounds) {
-                                if (round.getWinnerParticipant() != null && 
-                                    round.getWinnerParticipant().getId().equals(participant.getId())) {
-                                    Payment payment = new Payment();
-                                    payment.setGroup(group);
-                                    payment.setRound(round);
-                                    payment.setAmount(group.getMonthlyContribution().multiply(
-                                        new BigDecimal(group.getMaxMembers())));
-                                    payment.setDueDate(round.getEndDate());
-                                    payment.setStatus(PaymentStatus.PENDING);
-                                    payment.setPaymentBy(PaymentBy.SYSTEM_PAYMENT);
-                                    futureReceiving.add(payment);
+                    // Find or create group
+                    List<Group> matchingGroups = groupService.findAvailableGroupsByPaymentPlan(paymentPlan, GroupStatus.WAITING_FOR_MEMBERS);
+                    Group selectedGroup;
+                    if (matchingGroups.isEmpty()) {
+                        selectedGroup = groupService.createGroup(paymentPlan, paymentPlan.getMonthlyPayment(), paymentPlan.getMonthsCount());
+                    } else {
+                        selectedGroup = matchingGroups.get(0);
+                        // Check if the selected turn order is available
+                        try (org.hibernate.Session session = sessionFactory.openSession()) {
+                            List<Participant> existingParticipants = participantService.getByGroup( selectedGroup);
+                            boolean turnOrderTaken = existingParticipants.stream()
+                                .anyMatch(p -> p.getTurnOrder() == selectedTurnOrder);
+                            if (turnOrderTaken) {
+                                showAlert("Error", "Selected turn order is already taken. Please choose another one.", Alert.AlertType.ERROR);
+                                return null;
+                            }
+                        }
+                    }
+
+                    // Join group
+                    groupService.joinGroup(currentUser, selectedGroup, selectedTurnOrder);
+
+                    // Check if this was the last member to join
+                    try (org.hibernate.Session session = sessionFactory.openSession()) {
+                        List<Participant> allParticipants = participantService.getByGroup( selectedGroup);
+                        if (allParticipants.size() == selectedGroup.getMaxMembers()) {
+                            selectedGroup.setStatus(GroupStatus.PENDING_APPROVAL);
+                            groupService.updateGroup(selectedGroup);
+                            showAlert("Success", "Successfully joined group: " + selectedGroup.getGroupName() +
+                                "\nYour turn order: " + selectedTurnOrder +
+                                "\nGroup is now complete and pending approval!", Alert.AlertType.INFORMATION);
+                        } else {
+                            showAlert("Success", "Successfully joined group: " + selectedGroup.getGroupName() +
+                                "\nYour turn order: " + selectedTurnOrder, Alert.AlertType.INFORMATION);
+                        }
+                    }
+
+                    // Refresh all tables in the user dashboard
+                    TabPane tabPane = (TabPane) primaryStage.getScene().lookup(".tab-pane");
+                    if (tabPane != null) {
+                        Tab userDashboardTab = tabPane.getTabs().get(0); // First tab is user dashboard
+                        VBox dashboardContent = (VBox) userDashboardTab.getContent();
+                        for (javafx.scene.Node node : dashboardContent.getChildren()) {
+                            if (node instanceof TableView) {
+                                @SuppressWarnings("unchecked")
+                                TableView<Group> table = (TableView<Group>) node;
+                                if (table.getColumns().get(0).getText().equals("Group Name")) {
+                                    table.getItems().clear();
+                                    try (org.hibernate.Session session = sessionFactory.openSession()) {
+                                        table.getItems().addAll(groupService.getByMember(currentUser.getId()));
+                                    }
                                 }
                             }
                         }
                     }
+                } catch (Exception ex) {
+                    showAlert("Error", "Failed to join group: " + ex.getMessage(), Alert.AlertType.ERROR);
                 }
-                
-                paymentTable.getItems().clear();
-                paymentTable.getItems().addAll(futureReceiving);
-            } catch (Exception ex) {
-                showAlert("Error", "Failed to load future receiving amounts: " + ex.getMessage(), Alert.AlertType.ERROR);
             }
+            return null;
         });
 
-        // Add clear button handler
-        clearMyPaymentsBtn.setOnAction(e -> paymentTable.getItems().clear());
-
-        // Add all components to the content
-        content.getChildren().addAll(
-            new Label("My Payments and Receiving"),
-            buttonRow,
-            paymentTable
-        );
-
-        tab.setContent(content);
-        return tab;
+        dialog.showAndWait();
     }
 
     private Tab createUserProfileTab() {
@@ -1721,7 +1337,7 @@ public class SavingsApplication extends Application {
                 currentUser.setClearingNumber(clearingNumberField.getText());
 
                 // Save changes to database
-                userRepository.update(currentUser);
+                userService.updateUser(currentUser);
                 showAlert("Success", "Profile updated successfully", Alert.AlertType.INFORMATION);
             } catch (Exception ex) {
                 showAlert("Error", "Failed to update profile: " + ex.getMessage(), Alert.AlertType.ERROR);
@@ -1773,7 +1389,7 @@ public class SavingsApplication extends Application {
             dialog.showAndWait().ifPresent(newPassword -> {
                 try {
                     currentUser.setPassword(newPassword);
-                    userRepository.update(currentUser);
+                    userService.updateUser(currentUser);
                     showAlert("Success", "Password changed successfully", Alert.AlertType.INFORMATION);
                 } catch (Exception ex) {
                     showAlert("Error", "Failed to change password: " + ex.getMessage(), Alert.AlertType.ERROR);
@@ -1794,90 +1410,6 @@ public class SavingsApplication extends Application {
         return tab;
     }
 
-    private Tab createRoundTab() {
-        Tab tab = new Tab("Round Management");
-        VBox content = new VBox(10);
-        content.setPadding(new Insets(10));
-
-        // Create table for rounds
-        TableView<Round> roundTable = new TableView<>();
-        
-        // Add columns
-        TableColumn<Round, String> groupNameCol = new TableColumn<>("Group");
-        groupNameCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getGroup().getName()));
-        
-        TableColumn<Round, String> roundNumberCol = new TableColumn<>("Round #");
-        roundNumberCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(String.valueOf(cellData.getValue().getRoundNumber())));
-        
-        TableColumn<Round, String> amountCol = new TableColumn<>("Amount");
-        amountCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getAmount().toString()));
-        
-        TableColumn<Round, String> statusCol = new TableColumn<>("Status");
-        statusCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getStatus().toString()));
-        
-        TableColumn<Round, String> winnerCol = new TableColumn<>("Winner");
-        winnerCol.setCellValueFactory(cellData -> {
-            Participant winner = cellData.getValue().getWinnerParticipant();
-            return new SimpleStringProperty(winner != null ? winner.getUser().getUsername() : "Not Selected");
-        });
-
-        roundTable.getColumns().addAll(groupNameCol, roundNumberCol, amountCol, statusCol, winnerCol);
-
-        // Create buttons
-        HBox buttonBox = new HBox(10);
-        Button viewActiveRoundsBtn = new Button("View Active Rounds");
-        Button viewCompletedRoundsBtn = new Button("View Completed Rounds");
-        Button completeRoundBtn = new Button("Complete Round");
-
-        buttonBox.getChildren().addAll(viewActiveRoundsBtn, viewCompletedRoundsBtn, completeRoundBtn);
-
-        // Add button handlers
-        viewActiveRoundsBtn.setOnAction(e -> {
-            List<Round> activeRounds = roundRepository.getByStatus(RoundStatus.ACTIVE);
-            roundTable.getItems().setAll(activeRounds);
-        });
-
-        viewCompletedRoundsBtn.setOnAction(e -> {
-            List<Round> completedRounds = roundRepository.getByStatus(RoundStatus.COMPLETED);
-            roundTable.getItems().setAll(completedRounds);
-        });
-
-        completeRoundBtn.setOnAction(e -> {
-            Round selectedRound = roundTable.getSelectionModel().getSelectedItem();
-            if (selectedRound == null) {
-                showAlert("Error", "Please select a round first", Alert.AlertType.ERROR);
-                return;
-            }
-
-            if (selectedRound.getStatus() != RoundStatus.ACTIVE) {
-                showAlert("Error", "Can only complete active rounds", Alert.AlertType.ERROR);
-                return;
-            }
-
-            if (selectedRound.getWinnerParticipant() == null) {
-                showAlert("Error", "Round must have a winner before completing", Alert.AlertType.ERROR);
-                return;
-            }
-
-            try {
-                selectedRound.setStatus(RoundStatus.COMPLETED);
-                roundRepository.update(selectedRound);
-                roundTable.refresh();
-                showAlert("Success", "Round completed successfully", Alert.AlertType.INFORMATION);
-            } catch (Exception ex) {
-                showAlert("Error", "Failed to complete round: " + ex.getMessage(), Alert.AlertType.ERROR);
-            }
-        });
-
-        content.getChildren().addAll(buttonBox, roundTable);
-        tab.setContent(content);
-        return tab;
-    }
-
     private void showAlert(String title, String content, Alert.AlertType type) {
         Alert alert = new Alert(type);
         alert.setTitle(title);
@@ -1886,48 +1418,204 @@ public class SavingsApplication extends Application {
         alert.showAndWait();
     }
 
-    private void checkGroupStatus(Group group) {
-        if (group.getParticipants().size() == group.getMaxMembers()) {
-            group.setStatus(GroupStatus.PENDING_APPROVAL);
-            groupRepository.update(group);
-            showAlert("Group Status", "Group is now pending approval with " + 
-                group.getParticipants().size() + "/" + group.getMaxMembers() + " members", Alert.AlertType.INFORMATION);
-        }
+    private void showAllPaymentsDialog() {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("All Payments");
+        dialog.setHeaderText("View All Payments");
+        dialog.getDialogPane().setPrefSize(1200, 800);
+
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(20));
+
+        // Create tab pane for current and future payments
+        TabPane tabPane = new TabPane();
+        
+        // Create current payments tab
+        Tab currentPaymentsTab = new Tab("Current Payments");
+        TableView<Payment> currentPaymentsTable = createPaymentsTable();
+        currentPaymentsTab.setContent(currentPaymentsTable);
+        
+        // Create future payments tab
+        Tab futurePaymentsTab = new Tab("Future Payments");
+        TableView<Payment> futurePaymentsTable = createPaymentsTable();
+        futurePaymentsTab.setContent(futurePaymentsTable);
+        
+        tabPane.getTabs().addAll(currentPaymentsTab, futurePaymentsTab);
+
+        // Load payments
+        LocalDateTime now = LocalDateTime.now();
+        List<Payment> allPayments = paymentService.getAllPayments();
+            
+        // Split payments into current and future
+        List<Payment> currentPayments = allPayments.stream()
+            .filter(p -> p.getDueDate().isBefore(now) || p.getDueDate().isEqual(now))
+            .collect(Collectors.toList());
+            
+        List<Payment> futurePayments = allPayments.stream()
+            .filter(p -> p.getDueDate().isAfter(now))
+            .collect(Collectors.toList());
+
+        currentPaymentsTable.getItems().addAll(currentPayments);
+        futurePaymentsTable.getItems().addAll(futurePayments);
+
+        // Add refresh button
+        Button refreshPaymentBtn = new Button("Refresh");
+        refreshPaymentBtn.setOnAction(e -> {
+            currentPaymentsTable.getItems().clear();
+            futurePaymentsTable.getItems().clear();
+            
+            List<Payment> refreshedPayments = paymentService.getAllPayments();
+            
+            // Update both tables
+            currentPaymentsTable.getItems().addAll(
+                refreshedPayments.stream()
+                    .filter(p -> p.getDueDate().isBefore(now) || p.getDueDate().isEqual(now))
+                    .collect(Collectors.toList())
+            );
+            
+            futurePaymentsTable.getItems().addAll(
+                refreshedPayments.stream()
+                    .filter(p -> p.getDueDate().isAfter(now))
+                    .collect(Collectors.toList())
+            );
+        });
+
+        content.getChildren().addAll(tabPane, refreshPaymentBtn);
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.show();
     }
 
-    private void joinGroup(Group selectedGroup) {
-        if (selectedGroup.getStatus() == GroupStatus.WAITING_FOR_MEMBERS && 
-            selectedGroup.getParticipants().size() < selectedGroup.getMaxMembers()) {
-            // ... existing join group code ...
-        } else {
-            showAlert("Cannot Join Group", 
-                "This group requires " + selectedGroup.getMaxMembers() + " members but has only " +
-                selectedGroup.getParticipants().size() + " members.", Alert.AlertType.ERROR);
-        }
+    private TableView<Payment> createPaymentsTable() {
+        TableView<Payment> table = new TableView<>();
+        
+        TableColumn<Payment, String> groupNameCol = new TableColumn<>("Group");
+        TableColumn<Payment, String> usernameCol = new TableColumn<>("Username");
+        TableColumn<Payment, String> amountCol = new TableColumn<>("Amount");
+        TableColumn<Payment, String> statusCol = new TableColumn<>("Status");
+        TableColumn<Payment, String> dueDateCol = new TableColumn<>("Due Date");
+        TableColumn<Payment, String> paidAtCol = new TableColumn<>("Paid At");
+        TableColumn<Payment, Void> actionCol = new TableColumn<>("Action");
+
+        // Set column widths
+        groupNameCol.setPrefWidth(200);
+        usernameCol.setPrefWidth(150);
+        amountCol.setPrefWidth(120);
+        statusCol.setPrefWidth(120);
+        dueDateCol.setPrefWidth(200);
+        paidAtCol.setPrefWidth(200);
+        actionCol.setPrefWidth(100);
+
+        groupNameCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getGroup().getGroupName()));
+        usernameCol.setCellValueFactory(cellData -> {
+            Payment payment = cellData.getValue();
+            String username = "System";
+            if (payment.getCreator() != null) {
+                username = payment.getCreator().getUsername();
+            }
+            return new SimpleStringProperty(username);
+        });
+        amountCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getAmount().toString() + " SEK"));
+        statusCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getPaymentStatus().toString()));
+        dueDateCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getDueDate().toString()));
+        paidAtCol.setCellValueFactory(cellData -> {
+            LocalDateTime paidAt = cellData.getValue().getPaidAt();
+            return new SimpleStringProperty(paidAt != null ? paidAt.toString() : "Not Paid");
+        });
+
+        // Add Pay button to action column
+        actionCol.setCellFactory(col -> new TableCell<>() {
+            private final Button payButton = new Button("Pay");
+            
+            {
+                payButton.setOnAction(event -> {
+                    Payment payment = getTableView().getItems().get(getIndex());
+                    handlePayment(payment);
+                });
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty) {
+                    setGraphic(null);
+                } else {
+                    Payment payment = getTableView().getItems().get(getIndex());
+                    // Only show Pay button if payment is not already paid
+                    if (payment.getPaymentStatus() != PaymentStatus.PAID) {
+                        setGraphic(payButton);
+                    } else {
+                        setGraphic(null);
+                    }
+                }
+            }
+        });
+
+        table.getColumns().addAll(groupNameCol, usernameCol, amountCol, statusCol, dueDateCol, paidAtCol, actionCol);
+        return table;
     }
 
-    private javafx.beans.property.StringProperty createMemberCountProperty(Group group) {
-        return new SimpleStringProperty(group.getParticipants().size() + "/" + group.getMaxMembers());
-    }
-
-    private void createNewGroup(MonthOption selectedMonth, PaymentOption selectedPayment) {
-        Group selectedGroup = new Group();
-        selectedGroup.setMonthlyContribution(new BigDecimal(selectedPayment.getMonthlyPayment()));
-        selectedGroup.setMaxMembers(selectedMonth.getMonthsCount());
-        // ... rest of createNewGroup code ...
-
-        // Create rounds for the group
-        for (int i = 1; i <= selectedGroup.getMaxMembers(); i++) {
-            // ... round creation code ...
+    private void handlePayment(Payment payment) {
+        // Check if payment is already paid
+        if (payment.getPaymentStatus() == PaymentStatus.PAID) {
+            showAlert("Error", "This payment has already been paid", Alert.AlertType.ERROR);
+            return;
         }
-    }
 
-    private void checkGroupFull(Group selectedGroup) {
-        if (selectedGroup.getParticipants().size() == selectedGroup.getMaxMembers()) {
-            selectedGroup.setStatus(GroupStatus.PENDING_APPROVAL);
-            groupRepository.update(selectedGroup);
-            showAlert("Group Status", "Group is now pending approval!", Alert.AlertType.INFORMATION);
-        }
+        // Create confirmation dialog
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Confirm Payment");
+        dialog.setHeaderText("Confirm Payment Details");
+        
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(20));
+        
+        content.getChildren().addAll(
+            new Label("Group: " + payment.getGroup().getGroupName()),
+            new Label("Amount: " + payment.getAmount() + " SEK"),
+            new Label("Due Date: " + payment.getDueDate())
+        );
+        
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        
+        dialog.showAndWait().ifPresent(response -> {
+            if (response == ButtonType.OK) {
+                try {
+                    // Update payment status
+                    payment.setPaymentStatus(PaymentStatus.PAID);
+                    payment.setPaidAt(LocalDateTime.now());
+                    paymentService.updatePayment(payment);
+                    
+                    // Update the round status if all payments for this round are paid
+                    Round round = payment.getRound();
+                    if (round != null) {
+                        List<Payment> roundPayments = paymentService.getByRound(round);
+                        boolean allPaid = roundPayments.stream()
+                            .allMatch(p -> p.getPaymentStatus() == PaymentStatus.PAID);
+                        
+                        if (allPaid) {
+                            round.setStatus(RoundStatus.COMPLETED);
+                            roundService.updateRound(round);
+                        }
+                    }
+                    
+                    showAlert("Success", "Payment processed successfully", Alert.AlertType.INFORMATION);
+                    
+                    // Refresh the table
+                    TableView<Payment> table = (TableView<Payment>) dialog.getDialogPane().getScene().lookup(".table-view");
+                    if (table != null) {
+                        table.refresh();
+                    }
+                } catch (Exception e) {
+                    showAlert("Error", "Failed to process payment: " + e.getMessage(), Alert.AlertType.ERROR);
+                }
+            }
+        });
     }
 
     public static void main(String[] args) {

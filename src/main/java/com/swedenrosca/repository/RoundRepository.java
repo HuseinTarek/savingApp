@@ -5,141 +5,118 @@ import com.swedenrosca.model.Round;
 import com.swedenrosca.model.Group;
 import com.swedenrosca.model.User;
 import com.swedenrosca.model.RoundStatus;
-import org.hibernate.query.Query;
 import org.hibernate.*;
+import org.hibernate.query.Query;
 import java.util.List;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public class RoundRepository {
 
-    private final SessionFactory sessionFactory = SingletonSessionFactory.getSessionFactory();
 
-    public Round getById(Long id) {
-        Session session = sessionFactory.openSession();
-        Round round = session.get(Round.class, id);
-        session.close();
-        return round;
+    public Round getById(Session session, Long id) {
+        return session.get(Round.class, id);
     }
 
-    public List<Round> getAll() {
-        Session session = sessionFactory.openSession();
+    public List<Round> getAll(Session session) {
         Query<Round> query = session.createQuery("FROM Round", Round.class);
-        List<Round> result = query.getResultList();
-        session.close();
-        return result;
+        return query.getResultList();
     }
 
-    public List<Round> getByGroup(Group group) {
-        Session session = sessionFactory.openSession();
-        session.beginTransaction();
-
-        Query<Round> query = session.createQuery(
-                "FROM Round r WHERE r.group = :group", Round.class
-        );
+    public List<Round> getByGroup(Session session, Group group) {
+        Query<Round> query = session.createQuery("FROM Round WHERE group = :group", Round.class);
         query.setParameter("group", group);
-        List<Round> rounds = query.getResultList();
-
-        session.getTransaction().commit();
-        session.close();
-        return rounds;
+        return query.getResultList();
     }
 
-    public List<Round> getByWinnerUser(Participant winner) {
-        Session session = sessionFactory.openSession();
+    public List<Round> getByWinnerUser(Session session, Participant winner) {
         Query<Round> query = session.createQuery("FROM Round r WHERE r.winner = :winner", Round.class);
         query.setParameter("winner", winner);
-        List<Round> result = query.getResultList();
-        session.close();
-        return result;
+        return query.getResultList();
     }
 
-    public Round save(Round round) {
-        Session session = sessionFactory.openSession();
-        Transaction tx = session.beginTransaction();
+    public void save(Session session, Round round) {
+        session.persist(round);
+    }
+
+    public void update(Session session, Round round) {
         session.merge(round);
-        tx.commit();
-        session.close();
-        return round;
     }
 
-    public Round update(Round round) {
-        Session session = sessionFactory.openSession();
-        Transaction tx = session.beginTransaction();
-        Round updated = session.merge(round);
-        tx.commit();
-        session.close();
-        return updated;
-    }
-
-    public void delete(Round round) {
-        Session session = sessionFactory.openSession();
-        Transaction tx = session.beginTransaction();
+    public void delete(Session session, Round round) {
         session.remove(session.contains(round) ? round : session.merge(round));
-        tx.commit();
-        session.close();
     }
 
-    public void deleteAll() {
-        Session session = sessionFactory.openSession();
-        session.beginTransaction();
-        try {
-            session.createQuery("DELETE FROM Round").executeUpdate();
-            session.getTransaction().commit();
-        } catch (Exception e) {
-            session.getTransaction().rollback();
-            throw e;
-        } finally {
-            session.close();
-        }
+    public void deleteAll(Session session) {
+        session.createMutationQuery("DELETE FROM Round")
+            .executeUpdate();
     }
 
-    public List<Round> getActiveRounds() {
-        Session session = sessionFactory.openSession();
+    public List<Round> getActiveRounds(Session session) {
         Query<Round> query = session.createQuery("FROM Round r WHERE r.status = 'ACTIVE'", Round.class);
-        List<Round> result = query.getResultList();
-        session.close();
-        return result;
+        return query.getResultList();
     }
 
-    public List<Round> getByStatus(RoundStatus status) {
-        Session session = sessionFactory.openSession();
-        session.beginTransaction();
-
-        Query<Round> query = session.createQuery(
-                "FROM Round r WHERE r.status = :status", Round.class
-        );
+    public List<Round> getByStatus(Session session, RoundStatus status) {
+        Query<Round> query = session.createQuery("FROM Round r WHERE r.status = :status", Round.class);
         query.setParameter("status", status);
-        List<Round> rounds = query.getResultList();
-
-        session.getTransaction().commit();
-        session.close();
-        return rounds;
+        return query.getResultList();
     }
 
-    public List<Round> getFutureRoundsByGroup(Long groupId) {
-        try (Session session = sessionFactory.openSession()) {
-            Transaction transaction = session.beginTransaction();
-            try {
-                String hql = "FROM Round r WHERE r.group.id = :groupId AND r.startDate > :now";
-                List<Round> rounds = session.createQuery(hql, Round.class)
-                    .setParameter("groupId", groupId)
-                    .setParameter("now", LocalDateTime.now())
-                    .list();
-                transaction.commit();
-                return rounds;
-            } catch (Exception e) {
-                transaction.rollback();
-                throw e;
-            }
-        }
+    public List<Round> getFutureRoundsByGroup(Session session, Long groupId) {
+        String hql = "FROM Round r WHERE r.group.id = :groupId AND r.startDate > :now";
+        return session.createQuery(hql, Round.class)
+            .setParameter("groupId", groupId)
+            .setParameter("now", LocalDateTime.now())
+            .list();
     }
 
-    public List<Round> getAllRoundsByGroupId(Long groupId) {
-        try (Session session = sessionFactory.openSession()) {
-            String hql = "FROM Round r WHERE r.group.id = :groupId ORDER BY r.roundNumber";
-            return session.createQuery(hql, Round.class)
-                .setParameter("groupId", groupId)
-                .list();
-        }
+    public List<Round> getAllRoundsByGroupId(Session session, Long groupId) {
+        String hql = "FROM Round r WHERE r.group.id = :groupId ORDER BY r.roundNumber";
+        return session.createQuery(hql, Round.class)
+            .setParameter("groupId", groupId)
+            .list();
+    }
+
+    public String createRound(Session session, Long groupId, int turnOrder, BigDecimal amount) {
+      Query<Round> query = session.createQuery("INSERT INTO Round (groupId, turnOrder, amount) VALUES (:groupId, :turnOrder, :amount)", Round.class);
+      query.setParameter("groupId", groupId);
+      query.setParameter("turnOrder", turnOrder);
+      query.setParameter("amount", amount);
+      query.executeUpdate();
+      return "Round created successfully";
+    }
+
+    public List<Round> getGroupRounds(Session session, Long groupId) {
+        Query<Round> query = session.createQuery("FROM Round r WHERE r.group.id = :groupId ORDER BY r.roundNumber", Round.class);
+        query.setParameter("groupId", groupId);
+        return query.getResultList();
+    }
+    
+
+    public Round getRoundById(Session session, Long id) {
+        Query<Round> query = session.createQuery("FROM Round r WHERE r.id = :id", Round.class);
+        query.setParameter("id", id);
+        return query.getSingleResult();
+    }
+
+    public String updateRound(Session session, Long id, BigDecimal amount, Group group, int turnOrder,
+      LocalDateTime startDate, LocalDateTime endDate) {
+        Query<Round> query = session.createQuery("UPDATE Round r SET r.amount = :amount, r.group = :group, r.turnOrder = :turnOrder, r.startDate = :startDate, r.endDate = :endDate WHERE r.id = :id", Round.class);
+        query.setParameter("id", id);
+        query.setParameter("amount", amount);
+        query.setParameter("group", group);
+        query.setParameter("turnOrder", turnOrder);
+        query.setParameter("startDate", startDate);
+        query.setParameter("endDate", endDate);
+        query.executeUpdate();
+        return "Round updated successfully";
+    }
+
+    public String deleteRound(Session session, Long id) {
+        Query<Round> query = session.createQuery("DELETE FROM Round r WHERE r.id = :id", Round.class);
+        query.setParameter("id", id);
+        query.executeUpdate();
+        return "Round deleted successfully";
     }
 }

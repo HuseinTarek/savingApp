@@ -4,6 +4,8 @@ import com.swedenrosca.controller.*;
 import com.swedenrosca.model.*;
 import com.swedenrosca.repository.*;
 import com.swedenrosca.seed.DemoDataGenerator;
+import com.swedenrosca.service.*;
+import com.swedenrosca.util.SingletonSessionFactory;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 
@@ -27,7 +29,7 @@ public class ApplicationRunner {
     private final GroupController groupController;
     private final UserController userController;
     private final ParticipantController participantController;
-    private final RoundRepository roundRepository ;
+    private final RoundRepository roundRepository;
     private final PaymentPlanRepository paymentPlanRepository;
 
     private final DemoDataGenerator demoDataGenerator;
@@ -37,18 +39,13 @@ public class ApplicationRunner {
     private final ParticipantRepository participantRepository;
     private final PaymentRepository paymentRepository;
     private final MonthlyPaymentRepository monthlyPaymentRepository;
-    private final PaymentPlanController paymentPlanController ;
+    private final PaymentPlanController paymentPlanController;
     private final PaymentOptionRepository paymentOptionRepository;
-    private final MonthOptionRepository monthOptionRepository ;
+    private final MonthOptionRepository monthOptionRepository;
+    private final UserService userService;
 
-    public ApplicationRunner(ParticipantController participantController, RoundRepository roundRepository, PaymentPlanRepository paymentPlanRepository, DemoDataGenerator demoDataGenerator, PaymentPlanController paymentPlanController, PaymentOptionRepository paymentOptionRepository, MonthOptionRepository monthOptionRepository) {
-        this.participantController = participantController;
-        this.roundRepository = roundRepository;
-        this.paymentPlanRepository = paymentPlanRepository;
-        this.demoDataGenerator = demoDataGenerator;
-        this.paymentPlanController = paymentPlanController;
-        this.paymentOptionRepository = paymentOptionRepository;
-        this.monthOptionRepository = monthOptionRepository;
+    public ApplicationRunner() {
+        SessionFactory sessionFactory = SingletonSessionFactory.getSessionFactory();
         
         // Initialize repositories
         this.userRepository = new UserRepository();
@@ -56,13 +53,42 @@ public class ApplicationRunner {
         this.participantRepository = new ParticipantRepository();
         this.paymentRepository = new PaymentRepository();
         this.monthlyPaymentRepository = new MonthlyPaymentRepository();
+        this.paymentPlanRepository = new PaymentPlanRepository();
+        this.roundRepository = new RoundRepository();
+        this.paymentOptionRepository = new PaymentOptionRepository();
+        this.monthOptionRepository = new MonthOptionRepository();
+        
+        // Initialize services
+        MonthlyPaymentService monthlyPaymentService = new MonthlyPaymentService(monthlyPaymentRepository);
+        PaymentService paymentService = new PaymentService(paymentRepository, groupRepository, participantRepository);
+        RoundService roundService = new RoundService(roundRepository, groupRepository, participantRepository, userRepository);
+        GroupService groupService = new GroupService(sessionFactory, groupRepository, participantRepository, paymentPlanRepository, roundRepository, paymentRepository, userRepository);
+        this.userService = new UserService(sessionFactory, userRepository);
+        ParticipantService participantService = new ParticipantService(participantRepository);
+        PaymentPlanService paymentPlanService = new PaymentPlanService(sessionFactory, paymentPlanRepository);
         
         // Initialize controllers
-        this.monthlyPaymentController = new MonthlyPaymentController(monthlyPaymentRepository);
-        this.paymentController = new PaymentController(paymentRepository, participantRepository, groupRepository);
-        this.roundController = new RoundController(participantController, groupRepository, participantRepository, roundRepository);
-        this.groupController = new GroupController(participantRepository, groupRepository, userRepository, roundRepository, paymentRepository, paymentPlanRepository);
-        this.userController = new UserController(userRepository);
+        this.monthlyPaymentController = new MonthlyPaymentController(monthlyPaymentService);
+        this.paymentController = new PaymentController(paymentService);
+        this.roundController = new RoundController(participantService, roundService);
+        this.groupController = new GroupController(groupService, userService, participantService, paymentPlanService, roundService, paymentService);
+        this.userController = new UserController(userService);
+        this.participantController = new ParticipantController(participantService);
+        this.paymentPlanController = new PaymentPlanController(paymentPlanService);
+
+        // Initialize DemoDataGenerator
+        MonthOptionService monthOptionService = new MonthOptionService(sessionFactory, monthOptionRepository);
+        PaymentOptionService paymentOptionService = new PaymentOptionService(sessionFactory, paymentOptionRepository);
+        this.demoDataGenerator = new DemoDataGenerator(
+            userService,
+            groupService,
+            participantService,
+            paymentService,
+            paymentPlanService,
+            roundService,
+            monthOptionService,
+            paymentOptionService
+        );
 
         // Generate demo data
         this.demoDataGenerator.generateAllDemoData();
@@ -143,7 +169,7 @@ public class ApplicationRunner {
                     String username = scanner.nextLine();
                     System.out.print("Password: ");
                     String password = scanner.nextLine();
-                    User user = userRepository.getByUsername(username);
+                    User user = userRepository.getByUsername(null, username);
                     if (user != null && user.getPassword().equals(password)) {
                         if (user.getRole() == expectedRole) {
                             System.out.println("✅ Login successful.");
@@ -157,7 +183,7 @@ public class ApplicationRunner {
                 }
                 case 2 -> {
                     System.out.print("Username: "); String username = scanner.nextLine();
-                    if (userRepository.getByUsername(username) != null) {
+                    if (userRepository.getByUsername(null, username) != null) {
                         System.out.println("❌ Username already exists."); break;
                     }
 
@@ -167,7 +193,7 @@ public class ApplicationRunner {
                     System.out.print("Last name: "); String lastName = scanner.nextLine();
 
                     System.out.print("Mobile number: "); String mobile = scanner.nextLine();
-                    if (userRepository.existsByMobileNumber(mobile)) {
+                    if (userRepository.existsByMobileNumber(null, mobile)) {
                         System.out.println("❌ Mobile number already exists."); break;
                     }
 
@@ -176,7 +202,7 @@ public class ApplicationRunner {
                     User newUser = new User(username, password, email, personalNumber, firstName, lastName,
                             mobile, expectedRole);
 
-                    userRepository.save(newUser);
+                    userRepository.save(null, newUser);
                     System.out.println("✅ Registered successfully. You can now log in.");
                 }
                 case 3 -> {
@@ -235,7 +261,7 @@ public class ApplicationRunner {
                 case 6 -> viewMonthlyPaymentsForSpecificMonth();
                 case 7 -> viewLatePayments();
                 case 8 -> manageRoundStatus();
-                case 9 -> viewAllUsers();
+                case 9 -> viewAllUsers(session);
                 case 10 -> decideMonthlyPaymentAndMonthsCount();
                 default -> System.out.println("❌ Invalid option. Please try again.");
             }
@@ -249,7 +275,7 @@ public class ApplicationRunner {
 
     private void activatePendingApprovalGroups() {
         GroupRepository groupRepository = new GroupRepository();
-        List<Group> pendingGroups = groupRepository.getPendingApprovalGroups();
+        List<Group> pendingGroups = groupRepository.getPendingApprovalGroups(null);
         
         if (pendingGroups.isEmpty()) {
             System.out.println("❌ No pending approval groups found.");
@@ -270,7 +296,7 @@ public class ApplicationRunner {
             // Check if group is complete
             if (group.getParticipants().size() == group.getMaxMembers()) {
                 group.setStatus(GroupStatus.ACTIVE);
-                groupRepository.update(group);
+                groupRepository.update(null, group);
                 anyActivated = true;
                 System.out.printf("%-6d | %-25s | %-10s | %d/%d%n", 
                     group.getId(), 
@@ -297,7 +323,7 @@ public class ApplicationRunner {
 
     private void showActiveGroups() {
         GroupRepository groupRepository = new GroupRepository();
-        List<Group> activeGroups = groupRepository.getActiveGroups();
+        List<Group> activeGroups = groupRepository.getActiveGroups(null);
 
         if (activeGroups.isEmpty()) {
             System.out.println("❌ No active groups found.");
@@ -322,7 +348,7 @@ public class ApplicationRunner {
 
     private void viewAllGroups() {
         GroupRepository groupRepository = new GroupRepository();
-        List<Group> allGroups = groupRepository.getAll();
+        List<Group> allGroups = groupRepository.getAll(null);
 
         if (allGroups.isEmpty()) {
             System.out.println("❌ No groups found.");
@@ -345,11 +371,7 @@ public class ApplicationRunner {
         }
     }
 
-    private void createNewGroup() {
-        // This method is no longer needed as groups are created automatically
-        System.out.println("Groups are now created automatically when needed.");
-    }
-
+ 
     private void manageGroupStatus() {
         System.out.println("\n=== Manage Group Status ===");
         try {
@@ -357,7 +379,7 @@ public class ApplicationRunner {
             Long groupId = scanner.nextLong();
             scanner.nextLine();
             
-            Group group = groupRepository.getById(groupId);
+            Group group = groupRepository.getById(null, groupId);
             if (group == null) {
                 System.out.println("❌ Group not found!");
                 return;
@@ -383,7 +405,7 @@ public class ApplicationRunner {
             };
             
             group.setStatus(newStatus);
-            groupRepository.update(group);
+            groupRepository.update(null, group);
             System.out.println("✅ Group status updated successfully!");
         } catch (Exception e) {
             System.out.println("❌ Error updating group status: " + e.getMessage());
@@ -395,7 +417,7 @@ public class ApplicationRunner {
         Long roundId = scanner.nextLong();
         scanner.nextLine();
 
-        Round round = roundRepository.getById(roundId);
+        Round round = roundRepository.getById(null, roundId);
         if (round == null) {
             System.out.println("❌ Round not found!");
             return;
@@ -421,7 +443,7 @@ public class ApplicationRunner {
         };
 
         round.setStatus(newStatus);
-        roundRepository.update(round);
+        roundRepository.update(null, round);
         System.out.println("✅ Round status updated successfully!");
     }
 
@@ -476,7 +498,7 @@ public class ApplicationRunner {
     }
 
     private void viewMyGroups(User user) {
-        List<Group> userGroups = groupRepository.getByMember(user.getId());
+        List<Group> userGroups = groupRepository.getByMember(null, user.getId());
         if (userGroups.isEmpty()) {
             System.out.println("\nYou are not a member of any groups.");
             return;
@@ -501,7 +523,10 @@ public class ApplicationRunner {
         System.out.println("\n=== Join a Group ===");
         
         // Get all available month options
-        List<MonthOption> monthOptions = monthOptionRepository.getAll();
+        List<MonthOption> monthOptions;
+        try (Session session = sessionFactory.openSession()) {
+            monthOptions = monthOptionRepository.getAll(session);
+        }
         if (monthOptions.isEmpty()) {
             System.out.println("No month options available. Please contact an administrator.");
             return;
@@ -532,7 +557,10 @@ public class ApplicationRunner {
         MonthOption selectedMonthOption = monthOptions.get(monthChoice - 1);
 
         // Get all available payment options
-        List<PaymentOption> paymentOptions = paymentOptionRepository.getAllMonthlyPayments();
+        List<PaymentOption> paymentOptions;
+        try (Session session = sessionFactory.openSession()) {
+            paymentOptions = paymentOptionRepository.getAllMonthlyPayments(session);
+        }
         if (paymentOptions.isEmpty()) {
             System.out.println("No payment options available. Please contact an administrator.");
             return;
@@ -566,10 +594,10 @@ public class ApplicationRunner {
         PaymentPlan paymentPlan = new PaymentPlan();
         paymentPlan.setMonthsCount(selectedMonthOption.getMonthsCount());
         paymentPlan.setMonthlyPayment(java.math.BigDecimal.valueOf(selectedPaymentOption.getMonthlyPayment()));
-        paymentPlanRepository.save(paymentPlan);
+        paymentPlanRepository.save(null, paymentPlan);
 
         // Find or create group
-        List<Group> matchingGroups = groupRepository.findAvailableGroupsByPaymentPlan(paymentPlan, GroupStatus.WAITING_FOR_MEMBERS);
+        List<Group> matchingGroups = groupRepository.findAvailableGroupsByPaymentPlan(null, paymentPlan, GroupStatus.WAITING_FOR_MEMBERS);
         Group selectedGroup;
         
         if (matchingGroups.isEmpty()) {
@@ -584,7 +612,7 @@ public class ApplicationRunner {
             selectedGroup.setEndDate(java.time.LocalDateTime.now().plusMonths(paymentPlan.getMonthsCount()));
             selectedGroup.setTotalAmount(paymentPlan.getMonthlyPayment().multiply(java.math.BigDecimal.valueOf(paymentPlan.getMonthsCount())));
             selectedGroup.setGroupName(selectedGroup.generateGroupName(selectedGroup.getStartDate(), selectedGroup.getEndDate(), selectedGroup.getTotalAmount()));
-            groupRepository.save(selectedGroup);
+            groupRepository.save(null, selectedGroup);
         } else {
             selectedGroup = matchingGroups.get(0);
         }
@@ -596,20 +624,18 @@ public class ApplicationRunner {
         participant.setPaymentBy(PaymentBy.USER_PAYMENT);
         participant.setRole(GroupRole.PAYER);
         participant.setTurnOrder(selectedGroup.getParticipants().size() + 1);
-        participantRepository.save(participant);
+        participantRepository.save(null, participant);
         System.out.println("Successfully joined group: " + selectedGroup.getGroupName());
     }
 
     private void viewAllPayments() {
-        List<Payment> payments = paymentRepository.getAll();
-        System.out.printf("%-5s %-10s %-10s %-10s %-10s %-20s\n",
-                "ID", "Payer", "Recipient", "Amount", "Status", "PaidAt");
+        List<Payment> payments = paymentRepository.getAll(null);
+        System.out.printf("%-5s %-10s %-10s %-20s\n",
+                "ID", "Amount", "Status", "PaidAt");
 
         for (Payment p : payments) {
-            System.out.printf("%-5d %-10s %-10s %-10s %-10s %-20s\n",
+            System.out.printf("%-5d %-10s %-10s %-20s\n",
                     p.getId(),
-                    p.getPayer().getUser().getUsername(),
-                    p.getParticipant().getUser().getUsername(),
                     p.getAmount(),
                     p.getPaymentStatus(),
                     p.getPaidAt() != null ? p.getPaidAt().toString() : "Not Paid");
@@ -617,7 +643,6 @@ public class ApplicationRunner {
     }
 
     private void viewMonthlyPaymentsForSpecificMonth() {
-
         System.out.println("please enter the month :");
         int month = scanner.nextInt();
         scanner.nextLine();
@@ -626,19 +651,16 @@ public class ApplicationRunner {
         scanner.nextLine();
 
         LocalDateTime firstOfMonth = LocalDate.of(year, month, 1).atStartOfDay();
-        LocalDateTime startDate =firstOfMonth;
+        LocalDateTime startDate = firstOfMonth;
         LocalDateTime endDate = firstOfMonth.plusMonths(1);
-        List<Payment> payments = paymentRepository.getPaymentsByDateRange(startDate, endDate);
+        List<Payment> payments = paymentRepository.getPaymentsByDateRange(null, startDate, endDate);
 
-        System.out.printf("%-5s %-10s %-10s %-10s %-10s %-20s\n",
-                "ID", "Payer", "Recipient", "Amount", "Status", "PaidAt");
+        System.out.printf("%-5s %-10s %-10s %-20s\n",
+                "ID", "Amount", "Status", "PaidAt");
 
-        //Participant participant, int monthNumber, PaymentStatus status, PaymentBy paymentBy
         for (Payment p : payments) {
-            System.out.printf("%-5d %-10s %-10s %-10s %-10s %-20s\n",
+            System.out.printf("%-5d %-10s %-10s %-20s\n",
                     p.getId(),
-                    p.getPayer().getUser().getUsername(),
-                    p.getParticipant().getUser().getUsername(),
                     p.getAmount(),
                     p.getPaymentStatus(),
                     p.getPaidAt() != null ? p.getPaidAt().toString() : "Not Paid");
@@ -646,15 +668,13 @@ public class ApplicationRunner {
     }
 
     private void viewLatePayments() {
-        List<Payment> latePayments = paymentRepository.getLatePayments();
-        System.out.printf("%-5s %-10s %-10s %-10s %-10s %-20s\n",
-                "ID", "Payer", "Recipient", "Amount", "Status", "PaidAt");
+        List<Payment> latePayments = paymentRepository.getLatePayments(null);
+        System.out.printf("%-5s %-10s %-10s %-20s\n",
+                "ID", "Amount", "Status", "PaidAt");
 
         for (Payment p : latePayments) {
-            System.out.printf("%-5d %-10s %-10s %-10s %-10s %-20s\n",
+            System.out.printf("%-5d %-10s %-10s %-20s\n",
                     p.getId(),
-                    p.getPayer().getUser().getUsername(),
-                    p.getParticipant().getUser().getUsername(),
                     p.getAmount(),
                     p.getPaymentStatus(),
                     p.getPaidAt() != null ? p.getPaidAt().toString() : "Not Paid");
@@ -671,7 +691,7 @@ public class ApplicationRunner {
 
     private void viewActiveRounds() {
         RoundRepository roundRepository = new RoundRepository();
-        List<Round> activeRounds = roundRepository.getActiveRounds();
+        List<Round> activeRounds = roundRepository.getActiveRounds(null);
 
         if (activeRounds.isEmpty()) {
             System.out.println("❌ No active rounds found.");
@@ -693,30 +713,17 @@ public class ApplicationRunner {
         }
     }
 
-    private void viewAllUsers() {
-        UserController userController = new UserController(userRepository);
-        List<User> users = userController.getAllUsers();
-
+    private void viewAllUsers(Session session) {
+        List<User> users = userService.getAllUsers();
         if (users.isEmpty()) {
-            System.out.println("❌ No users found.");
+            System.out.println("No users found.");
             return;
         }
 
-        System.out.println("📋 All Registered Users:");
-        System.out.printf("%-5s | %-15s | %-15s | %-25s | %-12s | %-10s | %-10s%n",
-                "ID", "First Name", "Last Name", "Email", "Mobile", "Role", "Monthly");
-
-        System.out.println("---------------------------------------------------------------------------------------------");
-
+        System.out.println("\n=== All Users ===");
         for (User user : users) {
-            System.out.printf("%-5d | %-15s | %-15s | %-25s | %-12s | %-10s | %-10s%n",
-                    user.getId(),
-                    user.getFirstName(),
-                    user.getLastName(),
-                    user.getEmail(),
-                    user.getMobileNumber(),
-                    user.getRole(),
-                    user.getMonthlyContribution() != null ? user.getMonthlyContribution().toPlainString() + " kr" : "N/A");
+            System.out.printf("Username: %s, Role: %s, Email: %s%n",
+                    user.getUsername(), user.getRole(), user.getEmail());
         }
     }
 
@@ -763,37 +770,8 @@ public class ApplicationRunner {
     }
 
     public static void main(String[] args) {
-        // Initialize repositories
-        RoundRepository roundRepository = new RoundRepository();
-        PaymentRepository paymentRepository = new PaymentRepository();
-        PaymentPlanRepository paymentPlanRepository = new PaymentPlanRepository();
-        MonthOptionRepository monthOptionRepository = new MonthOptionRepository();
-        PaymentOptionRepository paymentOptionRepository = new PaymentOptionRepository();
-        ParticipantRepository participantRepository = new ParticipantRepository();
-        
-        // Initialize controllers
-        ParticipantController participantController = new ParticipantController(participantRepository);
-        PaymentPlanController paymentPlanController = new PaymentPlanController();
-        
-        // Initialize DemoDataGenerator
-        DemoDataGenerator demoDataGenerator = new DemoDataGenerator(
-            roundRepository,
-            paymentRepository,
-            paymentPlanRepository,
-            monthOptionRepository,
-            paymentOptionRepository
-        );
-
         // Create and run the application
-        ApplicationRunner app = new ApplicationRunner(
-            participantController,
-            roundRepository,
-            paymentPlanRepository,
-            demoDataGenerator,
-            paymentPlanController,
-            paymentOptionRepository,
-            monthOptionRepository
-        );
+        ApplicationRunner app = new ApplicationRunner();
         app.run();
     }
 }

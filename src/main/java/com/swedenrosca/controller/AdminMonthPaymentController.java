@@ -2,21 +2,26 @@ package com.swedenrosca.controller;
 
 import com.swedenrosca.model.MonthOption;
 import com.swedenrosca.model.PaymentOption;
+import com.swedenrosca.service.MonthOptionService;
+import com.swedenrosca.service.PaymentOptionService;
 import com.swedenrosca.repository.MonthOptionRepository;
 import com.swedenrosca.repository.PaymentOptionRepository;
 import org.hibernate.SessionFactory;
+import com.swedenrosca.util.SingletonSessionFactory;
 
 import java.util.List;
 import java.util.Scanner;
 
 public class AdminMonthPaymentController {
-
-    private final MonthOptionRepository monthRepo;
-    private final PaymentOptionRepository paymentRepo;
+    private final MonthOptionService monthOptionService;
+    private final PaymentOptionService paymentOptionService;
 
     public AdminMonthPaymentController() {
-        this.monthRepo   = new MonthOptionRepository();
-        this.paymentRepo = new PaymentOptionRepository();
+        SessionFactory sessionFactory = SingletonSessionFactory.getSessionFactory();
+        MonthOptionRepository monthOptionRepository = new MonthOptionRepository();
+        PaymentOptionRepository paymentOptionRepository = new PaymentOptionRepository();
+        this.monthOptionService = new MonthOptionService(sessionFactory, monthOptionRepository);
+        this.paymentOptionService = new PaymentOptionService(sessionFactory, paymentOptionRepository);
     }
 
     /**
@@ -71,7 +76,7 @@ public class AdminMonthPaymentController {
     }
 
     private void listMonths() {
-        List<MonthOption> options = monthRepo.getAll();
+        List<MonthOption> options = monthOptionService.getAll();
         options.forEach(opt ->
                 System.out.printf("ID: %d → %d months%n", opt.getId(), opt.getMonthsCount())
         );
@@ -81,7 +86,7 @@ public class AdminMonthPaymentController {
         System.out.print("Enter months count to add: ");
         int count = scanner.nextInt();
         scanner.nextLine();
-        monthRepo.save(new MonthOption(count));
+        monthOptionService.save(new MonthOption(count));
         System.out.println("Month option added.");
     }
 
@@ -89,13 +94,13 @@ public class AdminMonthPaymentController {
         System.out.print("Enter ID of month option to edit: ");
         Long id = scanner.nextLong();
         scanner.nextLine();
-        MonthOption opt = monthRepo.findById(id);
+        MonthOption opt = monthOptionService.findById(id);
         if (opt != null) {
             System.out.print("Enter new months count: ");
             int newCount = scanner.nextInt();
             scanner.nextLine();
             opt.setMonthsCount(newCount);
-            monthRepo.update(opt);
+            monthOptionService.update(opt);
             System.out.println("Month option updated.");
         } else {
             System.out.println("Option not found.");
@@ -106,7 +111,7 @@ public class AdminMonthPaymentController {
         System.out.print("Enter ID of month option to delete: ");
         Long id = scanner.nextLong();
         scanner.nextLine();
-        monthRepo.deleteById(id);
+        monthOptionService.deleteById(id);
         System.out.println("Month option deleted.");
     }
 
@@ -139,7 +144,7 @@ public class AdminMonthPaymentController {
     }
 
     private void listPayments() {
-        List<PaymentOption> options = paymentRepo.getAllMonthlyPayments();
+        List<PaymentOption> options = paymentOptionService.getAll();
         options.forEach(opt ->
                 System.out.printf("ID: %d → %d SEK per month%n", opt.getId(), opt.getMonthlyPayment())
         );
@@ -149,7 +154,7 @@ public class AdminMonthPaymentController {
         System.out.print("Enter monthly payment to add: ");
         int amount = scanner.nextInt();
         scanner.nextLine();
-        paymentRepo.save(new PaymentOption(amount));
+        paymentOptionService.save(new PaymentOption(amount));
         System.out.println("Payment option added.");
     }
 
@@ -157,13 +162,13 @@ public class AdminMonthPaymentController {
         System.out.print("Enter ID of payment option to edit: ");
         Long id = scanner.nextLong();
         scanner.nextLine();
-        PaymentOption opt = paymentRepo.findById(id);
+        PaymentOption opt = paymentOptionService.findById(id);
         if (opt != null) {
             System.out.print("Enter new monthly payment: ");
             int newAmount = scanner.nextInt();
             scanner.nextLine();
             opt.setMonthlyPayment(newAmount);
-            paymentRepo.update(opt);
+            paymentOptionService.update(opt);
             System.out.println("Payment option updated.");
         } else {
             System.out.println("Option not found.");
@@ -174,7 +179,7 @@ public class AdminMonthPaymentController {
         System.out.print("Enter ID of payment option to delete: ");
         Long id = scanner.nextLong();
         scanner.nextLine();
-        paymentRepo.deleteById(id);
+        paymentOptionService.deleteById(id);
         System.out.println("Payment option deleted.");
     }
 }

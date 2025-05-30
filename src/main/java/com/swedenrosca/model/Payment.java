@@ -17,14 +17,6 @@ public class Payment {
     @JoinColumn(name = "group_id", nullable = false)
     private Group group;
 
-    @ManyToOne
-    @JoinColumn(name = "payer_id", nullable = false)
-    private Participant payer;
-
-    @ManyToOne
-    @JoinColumn(name = "recipient_id", nullable = true)
-    private Participant participant;
-
     @Column(nullable = false)
     private BigDecimal amount;
 
@@ -64,11 +56,9 @@ public class Payment {
     public Payment() {}
 
     // All-args constructor (for convenience)
-    public Payment(Long id, Group group, Participant payer, Participant participant, BigDecimal amount, PaymentStatus status, LocalDateTime dueDate, BigDecimal serviceFee, LocalDateTime createdAt, LocalDateTime paidAt, Round round, PaymentBy paymentBy, User creator, PaymentPlan paymentPlan) {
+    public Payment(Long id, Group group, BigDecimal amount, PaymentStatus status, LocalDateTime dueDate, BigDecimal serviceFee, LocalDateTime createdAt, LocalDateTime paidAt, Round round, PaymentBy paymentBy, User creator, PaymentPlan paymentPlan) {
         this.id = id;
         this.group = group;
-        this.payer = payer;
-        this.participant = participant;
         this.amount = amount;
         this.status = status;
         this.dueDate = dueDate;
@@ -87,12 +77,6 @@ public class Payment {
 
     public Group getGroup() { return group; }
     public void setGroup(Group group) { this.group = group; }
-
-    public Participant getPayer() { return payer; }
-    public void setPayer(Participant payer) { this.payer = payer; }
-
-    public Participant getParticipant() { return participant; }
-    public void setParticipant(Participant participant) { this.participant = participant; }
 
     public BigDecimal getAmount() { return amount; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
@@ -132,8 +116,6 @@ public class Payment {
         return "Payment{" +
                 "id=" + id +
                 ", group=" + group +
-                ", payer=" + payer +
-                ", recipient=" + participant +
                 ", amount=" + amount +
                 ", status=" + status +
                 ", dueDate=" + dueDate +
@@ -151,7 +133,6 @@ public class Payment {
         Payment payment = (Payment) o;
         return Objects.equals(id, payment.id) &&
                 Objects.equals(group, payment.group) &&
-                Objects.equals(payer, payment.payer) &&
                 Objects.equals(amount, payment.amount) &&
                 status == payment.status &&
                 Objects.equals(dueDate, payment.dueDate);
@@ -159,6 +140,6 @@ public class Payment {
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, group, payer, amount, status, dueDate);
+        return Objects.hash(id, group, amount, status, dueDate);
     }
 }

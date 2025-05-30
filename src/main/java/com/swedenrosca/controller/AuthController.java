@@ -1,15 +1,18 @@
 package com.swedenrosca.controller;
 
-import com.swedenrosca.model.Role;
-import com.swedenrosca.model.User;
-import com.swedenrosca.repository.UserRepository;
+import com.swedenrosca.model.*;
+import com.swedenrosca.service.UserService;
 
 public class AuthController {
-    private final UserRepository userRepository = new UserRepository();
+    private final UserService userService;
     private User currentUser;
 
+    public AuthController(UserService userService) {
+        this.userService = userService;
+    }
+
     public String login(String username, String password) {
-        User user = userRepository.getByUsername(username);
+        User user = userService.getUserByUsername(username);
         if (user != null && password.equals(user.getPassword())) {
             this.currentUser = user;
             return "Login successful!";
@@ -19,7 +22,7 @@ public class AuthController {
 
     public String register(String username, String password, String personalNumber,
                            String firstName, String lastName, String mobileNumber) {
-        if (userRepository.existsByUsername(username)) {
+        if (userService.existsByUsername(username)) {
             return "Username already exists.";
         }
 
@@ -32,7 +35,7 @@ public class AuthController {
         newUser.setMobileNumber(mobileNumber);
         newUser.setRole(Role.USER);
 
-        userRepository.save(newUser);
+        userService.createUser(newUser);
         return "Registration successful!";
     }
 

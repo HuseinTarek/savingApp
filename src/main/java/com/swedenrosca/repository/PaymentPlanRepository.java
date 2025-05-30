@@ -10,7 +10,6 @@ import java.math.BigDecimal;
 import java.util.List;
 
 public class PaymentPlanRepository {
-    private final SessionFactory sessionFactory = SingletonSessionFactory.getSessionFactory();
 
     public PaymentPlanRepository() {
     }
@@ -18,117 +17,77 @@ public class PaymentPlanRepository {
     /**
      * Save new PaymentPlan to the database
      */
-    public void save(PaymentPlan plan) {
-        Transaction tx = null;
-        try (Session session = sessionFactory.openSession()) {
-            tx = session.beginTransaction();
-            session.persist(plan);
-            tx.commit();
-        } catch (Exception e) {
-            if (tx != null) tx.rollback();
-            throw e;
-        }
+    public void save(Session session, PaymentPlan plan) {
+        session.persist(plan);
     }
 
     /**
      *  Find PaymentPlan by its primary key
      */
-    public PaymentPlan findById(Long id) {
-        try (Session session = sessionFactory.openSession()) {
-            return session.get(PaymentPlan.class, id);
-        }
+    public PaymentPlan getById(Session session, Long id) {
+        return session.get(PaymentPlan.class, id);
     }
 
     /**
      *  Retrieve all PaymentPlan records
      */
-    public List<PaymentPlan> getAll() {
-        try (Session session = sessionFactory.openSession()) {
-            Query<PaymentPlan> query = session.createQuery("FROM PaymentPlan", PaymentPlan.class);
-            return query.list();
-        }
+    public List<PaymentPlan> getAll(Session session) {
+        return session.createQuery("FROM PaymentPlan", PaymentPlan.class).getResultList();
     }
 
     /**
      *  Find plans created by a specific user (creator)
      */
-    public List<PaymentPlan> findByCreatedBy(String createdBy) {
-        Session session = sessionFactory.openSession();
-            Query<PaymentPlan> query = session.createQuery(
-                    "FROM PaymentPlan p WHERE p.createdBy = :creator", PaymentPlan.class
-            );
-            query.setParameter("creator", createdBy);
-            return query.list();
-        }
+    public List<PaymentPlan> findByCreatedBy(Session session, String createdBy) {
+        Query<PaymentPlan> query = session.createQuery(
+                "FROM PaymentPlan p WHERE p.createdBy = :creator", PaymentPlan.class
+        );
+        query.setParameter("creator", createdBy);
+        return query.getResultList();
+    }
 
     /**
      * Update an existing PaymentPlan
      */
-    public void update(PaymentPlan plan) {
-        Transaction tx = null;
-        Session session = sessionFactory.openSession();
-            tx = session.beginTransaction();
-            session.merge(plan);
-            tx.commit();
+    public void update(Session session, PaymentPlan plan) {
+        session.merge(plan);
     }
 
-    public void getByMonthlyPayment(Long id) {
-        Session session = sessionFactory.openSession();
+    public void getByMonthlyPayment(Session session, Long id) {
         Query<PaymentPlan> query = session.createQuery(
                 "FROM PaymentPlan p WHERE p.monthlyPayment.id = :id", PaymentPlan.class
         );
         query.setParameter("id", id);
-        query.list();
+        query.getResultList();
     }
 
-    public void getByMonthsCount(Integer count) {
-        Session session = sessionFactory.openSession();
+    public void getByMonthsCount(Session session, Integer count) {
         Query<PaymentPlan> query = session.createQuery(
                 "FROM PaymentPlan p WHERE p.monthsCount = :count", PaymentPlan.class
         );
         query.setParameter("count", count);
-        query.list();
+        query.getResultList();
     }
 
     /**
      * English comment: Delete a PaymentPlan by its id
      */
-    public void delete(Long id) {
-        Transaction tx = null;
-        Session session = sessionFactory.openSession();
-            tx = session.beginTransaction();
-            PaymentPlan plan = session.get(PaymentPlan.class, id);
-            if (plan != null) {
-                session.remove(plan);
-            }
-            tx.commit();
+    public void delete(Session session, PaymentPlan plan) {
+        session.remove(session.contains(plan) ? plan : session.merge(plan));
     }
 
-    public List<PaymentPlan> findByPaymentAndMonths(BigDecimal monthlyPayment, int monthsCount) {
-        Session session = sessionFactory.openSession();
-        session.beginTransaction();
-
+    public List<PaymentPlan> findByPaymentAndMonths(Session session, BigDecimal monthlyContribution, int monthsCount) {
         Query<PaymentPlan> query = session.createQuery(
-                "FROM PaymentPlan p WHERE p.monthlyPayment = :payment AND p.monthsCount = :months",
+                "FROM PaymentPlan WHERE monthlyPayment = :monthlyContribution AND monthsCount = :monthsCount",
                 PaymentPlan.class
         );
-        query.setParameter("payment", monthlyPayment);
-        query.setParameter("months", monthsCount);
-
-        List<PaymentPlan> plans = query.getResultList();
-
-        session.getTransaction().commit();
-        session.close();
-
-        return plans;
+        query.setParameter("monthlyContribution", monthlyContribution);
+        query.setParameter("monthsCount", monthsCount);
+        return query.getResultList();
     }
 
-    public void deleteAll() {
-        try (Session session = sessionFactory.openSession()) {
-            session.beginTransaction();
-            session.createQuery("DELETE FROM PaymentPlan").executeUpdate();
-            session.getTransaction().commit();
-        }
+    public void deleteAll(Session session) {
+        session.createQuery("DELETE FROM PaymentPlan").executeUpdate();
     }
 
 }
