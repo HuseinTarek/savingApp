@@ -637,7 +637,7 @@ public class SavingsApplication extends Application {
         // Set up button handlers
         showAllGroupsBtn.setOnAction(e -> {
             mainTable.getItems().clear();
-            mainTable.getItems().addAll(groupService.getAllActiveGroups());
+            mainTable.getItems().addAll(groupService.getAllGroups());
         });
 
         showActiveGroupsBtn.setOnAction(e -> {
@@ -1010,7 +1010,7 @@ public class SavingsApplication extends Application {
             
             // Get all payments for the user's groups
             List<Participant> userParticipants = participantService.getByUser(currentUser);
-            List<Payment> userPayments = new ArrayList<>();
+            Set<Payment> userPayments = new HashSet<>(); // Changed to Set to prevent duplicates
             for (Participant participant : userParticipants) {
                 userPayments.addAll(paymentService.getByGroupAndParticipant(participant.getGroup(), participant));
             }
@@ -1026,13 +1026,15 @@ public class SavingsApplication extends Application {
                 .filter(p -> p.getDueDate().isAfter(now))
                 .collect(Collectors.toList());
 
+            currentPaymentsTable.getItems().clear(); // Clear before adding
+            futurePaymentsTable.getItems().clear(); // Clear before adding
             currentPaymentsTable.getItems().addAll(currentPayments);
             futurePaymentsTable.getItems().addAll(futurePayments);
         });
 
         // Load initial payments
         List<Participant> userParticipants = participantService.getByUser(currentUser);
-        List<Payment> userPayments = new ArrayList<>();
+        Set<Payment> userPayments = new HashSet<>(); // Changed to Set to prevent duplicates
         for (Participant participant : userParticipants) {
             userPayments.addAll(paymentService.getByGroupAndParticipant(participant.getGroup(), participant));
         }
@@ -1048,6 +1050,8 @@ public class SavingsApplication extends Application {
             .filter(p -> p.getDueDate().isAfter(now))
             .collect(Collectors.toList());
 
+        currentPaymentsTable.getItems().clear(); // Clear before adding
+        futurePaymentsTable.getItems().clear(); // Clear before adding
         currentPaymentsTable.getItems().addAll(currentPayments);
         futurePaymentsTable.getItems().addAll(futurePayments);
 
