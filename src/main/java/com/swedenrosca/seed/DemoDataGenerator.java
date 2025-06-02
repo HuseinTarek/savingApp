@@ -10,6 +10,8 @@ import java.util.ArrayList;
 import java.time.LocalDateTime;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
+import org.hibernate.Transaction;
+import java.util.stream.Collectors;
 
 public class DemoDataGenerator {
     private final UserService userService;
@@ -43,168 +45,318 @@ public class DemoDataGenerator {
         this.sessionFactory = SingletonSessionFactory.getSessionFactory();
     }
 
+    private boolean isDatabaseEmpty() {
+        System.out.println("\n=== Checking if database is empty ===");
+        
+        // Check if any data exists in any of the repositories
+        List<User> users = userService.getAllUsers();
+        System.out.println("Found " + users.size() + " users in database");
+        if (!users.isEmpty()) {
+            System.out.println("Users found: " + users.stream().map(User::getUsername).collect(Collectors.joining(", ")));
+            return false;
+        }
+
+        List<Group> groups = groupService.getAllGroups();
+        System.out.println("Found " + groups.size() + " groups in database");
+        if (!groups.isEmpty()) {
+            return false;
+        }
+
+        List<Payment> payments = paymentService.getAllPayments();
+        System.out.println("Found " + payments.size() + " payments in database");
+        if (!payments.isEmpty()) {
+            return false;
+        }
+
+        List<PaymentPlan> plans = paymentPlanService.getAllPaymentPlans();
+        System.out.println("Found " + plans.size() + " payment plans in database");
+        if (!plans.isEmpty()) {
+            return false;
+        }
+
+        List<Round> rounds = roundService.getAllRounds();
+        System.out.println("Found " + rounds.size() + " rounds in database");
+        if (!rounds.isEmpty()) {
+            return false;
+        }
+
+        List<MonthOption> monthOptions = monthOptionService.getAll();
+        System.out.println("Found " + monthOptions.size() + " month options in database");
+        if (!monthOptions.isEmpty()) {
+            return false;
+        }
+
+        List<PaymentOption> paymentOptions = paymentOptionService.getAll();
+        System.out.println("Found " + paymentOptions.size() + " payment options in database");
+        if (!paymentOptions.isEmpty()) {
+            return false;
+        }
+
+        System.out.println("Database is empty, proceeding with demo data generation");
+        return true;
+    }
+
     public void generateAllDemoData() {
-        System.out.println("Checking if demo data needs to be generated...");
+        System.out.println("\n=== Starting Demo Data Generation ===");
         if (!isDatabaseEmpty()) {
             System.out.println("Demo data already exists. Skipping generation.");
             return;
         }
-        System.out.println("Generating demo data...");
+        System.out.println("Database is empty. Generating demo data...");
 
         try (Session session = sessionFactory.openSession()) {
-            session.beginTransaction();
+            Transaction transaction = session.beginTransaction();
+            try {
+                // Create month options
+                System.out.println("\nCreating month options...");
+                MonthOption monthOption2 = new MonthOption();
+                monthOption2.setMonthsCount(2);
+                monthOptionService.save(monthOption2);
+                System.out.println("Created month option: 2 months");
 
-            // Save month options and payment options
-            MonthOption month2 = new MonthOption(2);
-            MonthOption month4 = new MonthOption(4);
-            MonthOption month6 = new MonthOption(6);
-            monthOptionService.save(month2);
-            monthOptionService.save(month4);
-            monthOptionService.save(month6);
+                MonthOption monthOption4 = new MonthOption();
+                monthOption4.setMonthsCount(4);
+                monthOptionService.save(monthOption4);
+                System.out.println("Created month option: 4 months");
 
-            PaymentOption payment1000 = new PaymentOption(1000);
-            PaymentOption payment2000 = new PaymentOption(2000);
-            PaymentOption payment3000 = new PaymentOption(3000);
-            paymentOptionService.save(payment1000);
-            paymentOptionService.save(payment2000);
-            paymentOptionService.save(payment3000);
+                MonthOption monthOption6 = new MonthOption();
+                monthOption6.setMonthsCount(6);
+                monthOptionService.save(monthOption6);
+                System.out.println("Created month option: 6 months");
 
-            // Create and save demo users
-            User admin = new User("admin", "admin", "admin@demo.com", "199001010001", "Admin", "User", "070100001", "123456781", "8901", new BigDecimal("1000"), 6, Role.ADMIN);
-            User user1 = new User("user1", "123", "user1@demo.com", "199001010002", "User", "One", "070100002", "123456782", "8902", new BigDecimal("1000"), 2, Role.USER);
-            User user2 = new User("user2", "123", "user2@demo.com", "199001010003", "User", "Two", "070100003", "123456783", "8903", new BigDecimal("2000"), 2, Role.USER);
-            User company = new User("company", "admin", "company@rosca.com", "199000000000", "Company", "Admin", "0700000000", "999999999", "9999", BigDecimal.ZERO, 0, Role.COMPANY);
-            
-            System.out.println("Creating demo users:");
-            System.out.println("user1 - Username: " + user1.getUsername() + ", Password: " + user1.getPassword() + ", Role: " + user1.getRole());
-            
+                // Create payment options
+                System.out.println("\nCreating payment options...");
+                PaymentOption paymentOption1000 = new PaymentOption();
+                paymentOption1000.setMonthlyPayment(1000);
+                paymentOptionService.save(paymentOption1000);
+                System.out.println("Created payment option: 1000 SEK");
+
+                PaymentOption paymentOption2000 = new PaymentOption();
+                paymentOption2000.setMonthlyPayment(2000);
+                paymentOptionService.save(paymentOption2000);
+                System.out.println("Created payment option: 2000 SEK");
+
+                PaymentOption paymentOption3000 = new PaymentOption();
+                paymentOption3000.setMonthlyPayment(3000);
+                paymentOptionService.save(paymentOption3000);
+                System.out.println("Created payment option: 3000 SEK");
+
+                // Create payment plans
+                System.out.println("\nCreating payment plans...");
+                PaymentPlan plan1 = new PaymentPlan();
+                plan1.setMonthsCount(5);
+                plan1.setMonthlyPayment(new BigDecimal("2000"));
+                paymentPlanService.createPaymentPlan(plan1);
+                System.out.println("Created plan1: " + plan1.getMonthsCount() + " months, " + plan1.getMonthlyPayment() + " SEK");
+
+                PaymentPlan plan2 = new PaymentPlan();
+                plan2.setMonthsCount(3);
+                plan2.setMonthlyPayment(new BigDecimal("3000"));
+                paymentPlanService.createPaymentPlan(plan2);
+                System.out.println("Created plan2: " + plan2.getMonthsCount() + " months, " + plan2.getMonthlyPayment() + " SEK");
+
+                // Create users
+                System.out.println("\nCreating users...");
+                
+                User admin = new User("admin", "123", "admin@demo.com", "123456-7890", "Admin", "User", "0701234567", "1234567890", "1234", new BigDecimal("0"), 0, Role.ADMIN);
             userService.createUser(admin);
+                System.out.println("Created admin user: " + admin.getUsername() + " with ID: " + admin.getId());
+
+                User user1 = new User("user1", "123", "user1@demo.com", "123456-7891", "John", "Doe", "0701234568", "1234567891", "1234", new BigDecimal("2000"), 5, Role.USER);
             userService.createUser(user1);
+                System.out.println("Created user1: " + user1.getUsername() + " with ID: " + user1.getId());
+
+                User user2 = new User("user2", "123", "user2@demo.com", "123456-7892", "Jane", "Smith", "0701234569", "1234567892", "1234", new BigDecimal("3000"), 3, Role.USER);
             userService.createUser(user2);
-            userService.createUser(company);
-            
-            System.out.println("Demo users created successfully");
+                System.out.println("Created user2: " + user2.getUsername() + " with ID: " + user2.getId());
 
-            // Save payment plans
-            PaymentPlan plan1 = new PaymentPlan(2, new BigDecimal("1000"));
-            PaymentPlan plan2 = new PaymentPlan(4, new BigDecimal("2000"));
-            PaymentPlan plan3 = new PaymentPlan(6, new BigDecimal("3000"));
-            paymentPlanService.createPaymentPlan(plan1);
-            paymentPlanService.createPaymentPlan(plan2);
-            paymentPlanService.createPaymentPlan(plan3);
+                User user3 = new User("user3", "123", "user3@demo.com", "123456-7893", "Bob", "Johnson", "0701234570", "1234567893", "1234", new BigDecimal("2000"), 5, Role.USER);
+                userService.createUser(user3);
+                System.out.println("Created user3: " + user3.getUsername() + " with ID: " + user3.getId());
 
-            // Create a payment plan for the mock group
-            PaymentPlan mockPlan = new PaymentPlan();
-            mockPlan.setMonthsCount(4);
-            mockPlan.setMonthlyPayment(new BigDecimal("2000"));
-            paymentPlanService.createPaymentPlan(mockPlan);
+                User user4 = new User("user4", "123", "user4@demo.com", "123456-7894", "Alice", "Brown", "0701234571", "1234567894", "1234", new BigDecimal("3000"), 3, Role.USER);
+                userService.createUser(user4);
+                System.out.println("Created user4: " + user4.getUsername() + " with ID: " + user4.getId());
 
-            // Create the mock group
-            Group mockGroup = new Group();
-            mockGroup.setPaymentPlan(mockPlan);
-            mockGroup.setMonthlyContribution(new BigDecimal("2000"));
-            mockGroup.setMaxMembers(4);
-            mockGroup.setStatus(GroupStatus.WAITING_FOR_MEMBERS);
-            mockGroup.setPaymentBy(PaymentBy.USER_PAYMENT);
-            mockGroup.setStartDate(java.time.LocalDateTime.now());
-            mockGroup.setEndDate(java.time.LocalDateTime.now().plusMonths(4));
-            mockGroup.setTotalAmount(new BigDecimal("8000"));
-            mockGroup.setGroupName(mockGroup.generateGroupName(mockGroup.getStartDate(), mockGroup.getEndDate(), mockGroup.getTotalAmount()));
-            groupService.createGroup(mockPlan, mockGroup.getMonthlyContribution(), mockGroup.getMaxMembers());
+                // Verify users were created
+                List<User> allUsers = userService.getAllUsers();
+                System.out.println("\nVerifying created users:");
+                for (User user : allUsers) {
+                    System.out.println("- " + user.getUsername() + " (ID: " + user.getId() + ", Role: " + user.getRole() + ")");
+                }
 
-            // Create and save mock users
-            User userA = new User("mockuserA", "123", "a@mock.com", "1111", "A", "Mock", "0709999000", "999111", "9222", new BigDecimal("0"), 0, Role.USER);
-            User userB = new User("mockuserB", "123", "b@mock.com", "2222", "B", "Mock", "0709999001", "999112", "9223", new BigDecimal("0"), 0, Role.USER);
-            User userC = new User("mockuserC", "123", "c@mock.com", "3333", "C", "Mock", "0709999002", "999113", "9224", new BigDecimal("0"), 0, Role.USER);
-            User userD = new User("mockuserD", "123", "d@mock.com", "4444", "D", "Mock", "0709999003", "999114", "9225", new BigDecimal("0"), 0, Role.USER);
-            userService.createUser(userA);
-            userService.createUser(userB);
-            userService.createUser(userC);
-            userService.createUser(userD);
+                // Create groups
+                System.out.println("\nCreating groups...");
+                Group group1 = groupService.createGroup(plan1, new BigDecimal("2000"), 5);
+                group1.setGroupName("Group 2000");
+                groupService.updateGroup(group1);
+                System.out.println("Created group1: " + group1.getGroupName());
 
-            // Create and save participants
-            Participant participantA = new Participant();
-            participantA.setUser(userA);
-            participantA.setGroup(mockGroup);
-            participantA.setPaymentBy(PaymentBy.USER_PAYMENT);
-            participantA.setRole(GroupRole.PAYER);
-            participantA.setTurnOrder(1);
-            participantService.addParticipant(participantA);
+                Group group2 = groupService.createGroup(plan2, new BigDecimal("3000"), 3);
+                group2.setGroupName("Group 3000");
+                groupService.updateGroup(group2);
+                System.out.println("Created group2: " + group2.getGroupName());
 
-            Participant participantB = new Participant();
-            participantB.setUser(userB);
-            participantB.setGroup(mockGroup);
-            participantB.setPaymentBy(PaymentBy.USER_PAYMENT);
-            participantB.setRole(GroupRole.PAYER);
-            participantB.setTurnOrder(2);
-            participantService.addParticipant(participantB);
+                // Add participants to groups
+                System.out.println("\nAdding participants to groups...");
+                groupService.joinGroup(user1, group1, 1);
+                groupService.joinGroup(user2, group1, 2);
+                groupService.joinGroup(user3, group1, 3);
+                groupService.joinGroup(user4, group1, 4);
+                groupService.joinGroup(admin, group1, 5);
+                System.out.println("Added participants to group1");
 
-            Participant participantC = new Participant();
-            participantC.setUser(userC);
-            participantC.setGroup(mockGroup);
-            participantC.setPaymentBy(PaymentBy.USER_PAYMENT);
-            participantC.setRole(GroupRole.PAYER);
-            participantC.setTurnOrder(3);
-            participantService.addParticipant(participantC);
+                groupService.joinGroup(user1, group2, 1);
+                groupService.joinGroup(user2, group2, 2);
+                groupService.joinGroup(user3, group2, 3);
+                System.out.println("Added participants to group2");
 
-            Participant participantD = new Participant();
-            participantD.setUser(userD);
-            participantD.setGroup(mockGroup);
-            participantD.setPaymentBy(PaymentBy.USER_PAYMENT);
-            participantD.setRole(GroupRole.PAYER);
-            participantD.setTurnOrder(4);
-            participantService.addParticipant(participantD);
+                // Set groups to PENDING_APPROVAL
+                group1.setStatus(GroupStatus.PENDING_APPROVAL);
+                group2.setStatus(GroupStatus.PENDING_APPROVAL);
+                groupService.updateGroup(group1);
+                groupService.updateGroup(group2);
+                System.out.println("Set groups to PENDING_APPROVAL status");
 
-            // Update group status to PENDING_APPROVAL
-            mockGroup.setStatus(GroupStatus.PENDING_APPROVAL);
-            groupService.updateGroup(mockGroup);
+                // Create rounds and payments for group1
+                System.out.println("\nCreating rounds and payments for group1...");
+                LocalDateTime startDate = LocalDateTime.now();
+                for (int i = 1; i <= 5; i++) {
+                    Round round = new Round();
+                    round.setGroup(group1);
+                    round.setRoundNumber(i);
+                    round.setStatus(RoundStatus.ACTIVE);  // Set to ACTIVE since group is PENDING_APPROVAL
+                    round.setStartDate(startDate.plusMonths(i - 1));
+                    round.setEndDate(startDate.plusMonths(i));
+                    round.setAmount(new BigDecimal("2000"));
+                    
+                    // Set winner for this round
+                    List<Participant> participants = participantService.getByGroup(group1);
+                    Participant winner = null;
+                    for (Participant p : participants) {
+                        if (p.getTurnOrder() == i) {
+                            winner = p;
+                            round.setWinnerParticipant(p);
+                            break;
+                        }
+                    }
+                    
+                    roundService.createRound(round);
+                    System.out.println("Created round " + i + " for group1 with winner: " + (winner != null ? winner.getUser().getUsername() : "none"));
 
-            // Create and save mock payments
-            LocalDateTime now = java.time.LocalDateTime.now();
-            List<Participant> mockParticipants = participantService.getByGroup(mockGroup);
-            for (Participant participant : mockParticipants) {
+                    // Create payments for this round
+                    for (Participant p : participants) {
                 Payment payment = new Payment();
-                payment.setGroup(mockGroup);
-                payment.setCreator(participant.getUser());
+                        payment.setGroup(group1);
+                        payment.setCreator(p.getUser());
                 payment.setAmount(new BigDecimal("2000"));
+                        
+                        // Set payment status based on round number and participant
+                        if (i == 1) {
+                            // First round: all payments are PAID
+                            payment.setStatus(PaymentStatus.PAID);
+                            payment.setPaidAt(LocalDateTime.now().minusDays(2));
+                        } else if (i == 2) {
+                            // Second round: winner's payment is PAID, others are PENDING
+                            if (p.getTurnOrder() == 2) {
+                                payment.setStatus(PaymentStatus.PAID);
+                                payment.setPaidAt(LocalDateTime.now().minusDays(1));
+                            } else {
+                                payment.setStatus(PaymentStatus.PENDING);
+                            }
+                        } else {
+                            // Other rounds: all payments are PENDING
                 payment.setStatus(PaymentStatus.PENDING);
+                        }
+                        
                 payment.setPaymentBy(PaymentBy.USER_PAYMENT);
-                payment.setCreatedAt(now);
-                payment.setDueDate(now.plusDays(5));
-                paymentService.save(payment);
+                        payment.setCreatedAt(LocalDateTime.now());
+                        payment.setRound(round);
+                        payment.setDueDate(round.getStartDate().plusDays(5));
+                        payment.setPaymentPlan(plan1);
+                        paymentService.createPayment(payment);
             }
+                    System.out.println("Created payments for round " + i + " in group1");
+                }
 
-            session.getTransaction().commit();
-            System.out.println("Created mock group with 4 members, status PENDING_APPROVAL, and mock payments");
-            System.out.println("Demo data generation completed.");
+                // Create rounds and payments for group2
+                System.out.println("\nCreating rounds and payments for group2...");
+                for (int i = 1; i <= 3; i++) {
+                    Round round = new Round();
+                    round.setGroup(group2);
+                    round.setRoundNumber(i);
+                    round.setStatus(RoundStatus.ACTIVE);  // Set to ACTIVE since group is PENDING_APPROVAL
+                    round.setStartDate(startDate.plusMonths(i - 1));
+                    round.setEndDate(startDate.plusMonths(i));
+                    round.setAmount(new BigDecimal("3000"));
+                    
+                    // Set winner for this round
+                    List<Participant> participants = participantService.getByGroup(group2);
+                    Participant winner = null;
+                    for (Participant p : participants) {
+                        if (p.getTurnOrder() == i) {
+                            winner = p;
+                            round.setWinnerParticipant(p);
+                            break;
         }
     }
 
-    private boolean isDatabaseEmpty() {
-        try (Session session = sessionFactory.openSession()) {
-            // Check if any data exists in any of the repositories
-            if (!userService.getAllUsers().isEmpty()) {
-                return false;
+                    roundService.createRound(round);
+                    System.out.println("Created round " + i + " for group2 with winner: " + (winner != null ? winner.getUser().getUsername() : "none"));
+
+                    // Create payments for this round
+                    for (Participant p : participants) {
+                        Payment payment = new Payment();
+                        payment.setGroup(group2);
+                        payment.setCreator(p.getUser());
+                        payment.setAmount(new BigDecimal("3000"));
+                        
+                        // Set payment status based on round number and participant
+                        if (i == 1) {
+                            // First round: all payments are PAID
+                            payment.setStatus(PaymentStatus.PAID);
+                            payment.setPaidAt(LocalDateTime.now().minusDays(2));
+                        } else if (i == 2) {
+                            // Second round: winner's payment is PAID, others are PENDING
+                            if (p.getTurnOrder() == 2) {
+                                payment.setStatus(PaymentStatus.PAID);
+                                payment.setPaidAt(LocalDateTime.now().minusDays(1));
+                            } else {
+                                payment.setStatus(PaymentStatus.PENDING);
             }
-            if (!groupService.getAllGroups().isEmpty()) {
-                return false;
+                        } else {
+                            // Other rounds: all payments are PENDING
+                            payment.setStatus(PaymentStatus.PENDING);
+                        }
+                        
+                        payment.setPaymentBy(PaymentBy.USER_PAYMENT);
+                        payment.setCreatedAt(LocalDateTime.now());
+                        payment.setRound(round);
+                        payment.setDueDate(round.getStartDate().plusDays(5));
+                        payment.setPaymentPlan(plan2);
+                        paymentService.createPayment(payment);
+                    }
+                    System.out.println("Created payments for round " + i + " in group2");
+                }
+
+                transaction.commit();
+                System.out.println("\nDemo data generation completed successfully!");
+                
+                // Final verification
+                System.out.println("\nFinal database state:");
+                System.out.println("Users: " + userService.getAllUsers().size());
+                System.out.println("Groups: " + groupService.getAllGroups().size());
+                System.out.println("Payments: " + paymentService.getAllPayments().size());
+                System.out.println("Rounds: " + roundService.getAllRounds().size());
+                System.out.println("Month Options: " + monthOptionService.getAll().size());
+                System.out.println("Payment Options: " + paymentOptionService.getAll().size());
+                
+            } catch (Exception e) {
+                transaction.rollback();
+                System.err.println("Error generating demo data: " + e.getMessage());
+                e.printStackTrace();
+                throw e;
             }
-            if (!paymentService.getAllPayments().isEmpty()) {
-                return false;
-            }
-            if (!paymentPlanService.getAllPaymentPlans().isEmpty()) {
-                return false;
-            }
-            if (!roundService.getAllRounds().isEmpty()) {
-                return false;
-            }
-            if (!monthOptionService.getAll().isEmpty()) {
-                return false;
-            }
-            if (!paymentOptionService.getAll().isEmpty()) {
-                return false;
-            }
-            return true;
         }
     }
 }
