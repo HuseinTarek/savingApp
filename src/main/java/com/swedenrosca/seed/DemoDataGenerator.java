@@ -156,34 +156,46 @@ public class DemoDataGenerator {
                 System.out.println("Created plan2: " + plan2.getMonthsCount() + " months, " + plan2.getMonthlyPayment() + " SEK");
 
                 // Create users
+                // Create users
                 System.out.println("\nCreating users...");
-                
+
                 User admin = new User("admin", "123", "admin@demo.com", "123456-7890", "Admin", "User", "0701234567", "1234567890", "1234", new BigDecimal("0"), 0, Role.ADMIN);
-            userService.createUser(admin);
-                System.out.println("Created admin user: " + admin.getUsername() + " with ID: " + admin.getId());
+                userService.createUser(admin);
+                admin.setCurrentBalance(new BigDecimal("10000.00")); // Specific balance for admin
+                userService.updateUser(admin); // Assuming UserService can update the user
+                System.out.println("Created admin user: " + admin.getUsername() + " with ID: " + admin.getId() + ", Balance: " + admin.getCurrentBalance() + " SEK");
 
                 User user1 = new User("user1", "123", "user1@demo.com", "123456-7891", "John", "Doe", "0701234568", "1234567891", "1234", new BigDecimal("2000"), 5, Role.USER);
-            userService.createUser(user1);
-                System.out.println("Created user1: " + user1.getUsername() + " with ID: " + user1.getId());
+                userService.createUser(user1);
+                user1.setCurrentBalance(new BigDecimal("5000.00")); // Specific balance for user1
+                userService.updateUser(user1);
+                System.out.println("Created user1: " + user1.getUsername() + " with ID: " + user1.getId() + ", Balance: " + user1.getCurrentBalance() + " SEK");
 
                 User user2 = new User("user2", "123", "user2@demo.com", "123456-7892", "Jane", "Smith", "0701234569", "1234567892", "1234", new BigDecimal("3000"), 3, Role.USER);
-            userService.createUser(user2);
-                System.out.println("Created user2: " + user2.getUsername() + " with ID: " + user2.getId());
+                userService.createUser(user2);
+                user2.setCurrentBalance(new BigDecimal("7500.00")); // Specific balance for user2
+                userService.updateUser(user2);
+                System.out.println("Created user2: " + user2.getUsername() + " with ID: " + user2.getId() + ", Balance: " + user2.getCurrentBalance() + " SEK");
 
                 User user3 = new User("user3", "123", "user3@demo.com", "123456-7893", "Bob", "Johnson", "0701234570", "1234567893", "1234", new BigDecimal("2000"), 5, Role.USER);
                 userService.createUser(user3);
-                System.out.println("Created user3: " + user3.getUsername() + " with ID: " + user3.getId());
+                user3.setCurrentBalance(new BigDecimal("6000.00")); // Specific balance for user3
+                userService.updateUser(user3);
+                System.out.println("Created user3: " + user3.getUsername() + " with ID: " + user3.getId() + ", Balance: " + user3.getCurrentBalance() + " SEK");
 
                 User user4 = new User("user4", "123", "user4@demo.com", "123456-7894", "Alice", "Brown", "0701234571", "1234567894", "1234", new BigDecimal("3000"), 3, Role.USER);
                 userService.createUser(user4);
-                System.out.println("Created user4: " + user4.getUsername() + " with ID: " + user4.getId());
+                user4.setCurrentBalance(new BigDecimal("8000.00")); // Specific balance for user4
+                userService.updateUser(user4);
+                System.out.println("Created user4: " + user4.getUsername() + " with ID: " + user4.getId() + ", Balance: " + user4.getCurrentBalance() + " SEK");
 
                 // Verify users were created
                 List<User> allUsers = userService.getAllUsers();
-                System.out.println("\nVerifying created users:");
+                System.out.println("\nVerifying created users (with balances):");
                 for (User user : allUsers) {
-                    System.out.println("- " + user.getUsername() + " (ID: " + user.getId() + ", Role: " + user.getRole() + ")");
+                    System.out.println("- " + user.getUsername() + " (ID: " + user.getId() + ", Role: " + user.getRole() + ", Balance: " + (user.getCurrentBalance() != null ? user.getCurrentBalance() + " SEK" : "N/A") + ")");
                 }
+
 
                 // Create groups
                 System.out.println("\nCreating groups...");

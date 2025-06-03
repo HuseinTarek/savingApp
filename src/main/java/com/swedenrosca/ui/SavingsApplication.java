@@ -1324,7 +1324,9 @@ public class SavingsApplication extends Application {
         grid.add(clearingNumberField, 1, 6);
 
         Label currentBalanceLabelText = new Label("Current Balance:");
-        Label currentBalanceValue = new Label("0.00 SEK"); // Placeholder value
+        BigDecimal currentBalance = currentUser.getCurrentBalance();
+        String stringBalance = currentBalance != null ? currentBalance.toString() + " SEK" : "0.00 SEK";
+        Label currentBalanceValue = new Label(stringBalance); // Placeholder value
         grid.add(currentBalanceLabelText, 0, 7);
         grid.add(currentBalanceValue, 1, 7);
         // Create buttons

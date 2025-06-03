@@ -44,7 +44,7 @@ public class User {
     @Column(name = "number_of_members")
     private int numberOfMembers;
 
-    @Column(name="Current Balance")
+    @Column(name="Current Balance",nullable=true)
     private BigDecimal currentBalance;
 
     @Enumerated(EnumType.STRING)
@@ -201,9 +201,15 @@ public class User {
         this.role = role;
     }
 
+    public BigDecimal getCurrentBalance() {
+        return currentBalance;
+    }
 
+    public void setCurrentBalance(BigDecimal currentBalance) {
+        this.currentBalance = currentBalance;
+    }
 
-    // toString method
+// toString method
 
 
     @Override
