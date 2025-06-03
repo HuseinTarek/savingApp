@@ -17,6 +17,7 @@ import javafx.beans.property.IntegerProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
@@ -1322,6 +1323,10 @@ public class SavingsApplication extends Application {
         grid.add(new Label("Clearing Number:"), 0, 6);
         grid.add(clearingNumberField, 1, 6);
 
+        Label currentBalanceLabelText = new Label("Current Balance:");
+        Label currentBalanceValue = new Label("0.00 SEK"); // Placeholder value
+        grid.add(currentBalanceLabelText, 0, 7);
+        grid.add(currentBalanceValue, 1, 7);
         // Create buttons
         HBox buttonBox = new HBox(10);
         buttonBox.setAlignment(javafx.geometry.Pos.CENTER);
@@ -1492,74 +1497,59 @@ public class SavingsApplication extends Application {
 
     private TableView<Payment> createPaymentsTable() {
         TableView<Payment> table = new TableView<>();
-        
-        TableColumn<Payment, String> groupNameCol = new TableColumn<>("Group");
-        TableColumn<Payment, String> usernameCol = new TableColumn<>("Username");
-        TableColumn<Payment, String> amountCol = new TableColumn<>("Amount");
-        TableColumn<Payment, String> statusCol = new TableColumn<>("Status");
-        TableColumn<Payment, String> dueDateCol = new TableColumn<>("Due Date");
-        TableColumn<Payment, String> paidAtCol = new TableColumn<>("Paid At");
-        TableColumn<Payment, Void> actionCol = new TableColumn<>("Action");
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
-        // Set column widths
-        groupNameCol.setPrefWidth(200);
-        usernameCol.setPrefWidth(150);
-        amountCol.setPrefWidth(120);
-        statusCol.setPrefWidth(120);
-        dueDateCol.setPrefWidth(200);
-        paidAtCol.setPrefWidth(200);
-        actionCol.setPrefWidth(100);
 
-        groupNameCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getGroup().getGroupName()));
-        usernameCol.setCellValueFactory(cellData -> {
+        // Group Name column
+        TableColumn<Payment, String> groupNameCol = new TableColumn<>("Group Name");
+        groupNameCol.setCellValueFactory(cellData -> {
             Payment payment = cellData.getValue();
-            String username = "System";
-            if (payment.getCreator() != null) {
-                username = payment.getCreator().getUsername();
+            if (payment != null && payment.getGroup() != null) {
+                return new SimpleStringProperty(payment.getGroup().getGroupName());
             }
-            return new SimpleStringProperty(username);
+            return new SimpleStringProperty(""); // Or "N/A" or some other placeholder
         });
-        amountCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getAmount().toString() + " SEK"));
-        statusCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getPaymentStatus().toString()));
-        dueDateCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getDueDate().toString()));
+        groupNameCol.setPrefWidth(200);
+
+
+
+        // Amount column
+        TableColumn<Payment, String> amountCol = new TableColumn<>("Amount");
+        amountCol.setCellValueFactory(cellData -> {
+            Payment payment = cellData.getValue();
+            if (payment != null && payment.getAmount() != null) {
+                return new SimpleStringProperty(payment.getAmount().toString() + " SEK");
+            }
+            return new SimpleStringProperty("");
+        });
+        amountCol.setPrefWidth(100);
+        // Due Date column
+        TableColumn<Payment, String> dueDateCol = new TableColumn<>("Due Date");
+        dueDateCol.setCellValueFactory(cellData -> {
+            LocalDateTime dueDate = cellData.getValue().getDueDate();
+            return new SimpleStringProperty(dueDate != null ? dueDate.format(formatter) : "");
+        });
+        
+        // Paid At column
+        TableColumn<Payment, String> paidAtCol = new TableColumn<>("Paid At");
         paidAtCol.setCellValueFactory(cellData -> {
             LocalDateTime paidAt = cellData.getValue().getPaidAt();
-            return new SimpleStringProperty(paidAt != null ? paidAt.toString() : "Not Paid");
+            return new SimpleStringProperty(paidAt != null ? paidAt.format(formatter) : "Not Paid");
         });
 
-        // Add Pay button to action column
-        actionCol.setCellFactory(col -> new TableCell<>() {
-            private final Button payButton = new Button("Pay");
-            
-            {
-                payButton.setOnAction(event -> {
-                    Payment payment = getTableView().getItems().get(getIndex());
-                    handlePayment(payment);
-                });
+        // Status column
+        TableColumn<Payment, String> statusCol = new TableColumn<>("Status");
+        statusCol.setCellValueFactory(cellData -> {
+            Payment payment = cellData.getValue();
+            if (payment != null && payment.getStatus() != null) {
+                return new SimpleStringProperty(payment.getStatus().toString());
             }
-
-            @Override
-            protected void updateItem(Void item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty) {
-                    setGraphic(null);
-                } else {
-                    Payment payment = getTableView().getItems().get(getIndex());
-                    // Only show Pay button if payment is not already paid
-                    if (payment.getPaymentStatus() != PaymentStatus.PAID) {
-                        setGraphic(payButton);
-                    } else {
-                        setGraphic(null);
-                    }
-                }
-            }
+            return new SimpleStringProperty("");
         });
-
-        table.getColumns().addAll(groupNameCol, usernameCol, amountCol, statusCol, dueDateCol, paidAtCol, actionCol);
+        statusCol.setPrefWidth(100);
+        
+        // Add columns to table
+        table.getColumns().addAll(groupNameCol, dueDateCol, paidAtCol, amountCol, statusCol);
         return table;
     }
 

@@ -44,6 +44,9 @@ public class User {
     @Column(name = "number_of_members")
     private int numberOfMembers;
 
+    @Column(name="Current Balance")
+    private BigDecimal currentBalance;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role; // ADMIN, USER, CUSTOMER_SERVICE, COMPANY
