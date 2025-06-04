@@ -348,11 +348,6 @@ public class SavingsApplication extends Application {
         formBox.setMaxWidth(400);
         formBox.getStyleClass().add("vbox");
 
-        ComboBox<Role> roleComboBox = new ComboBox<>();
-        roleComboBox.getItems().addAll(Role.USER, Role.ADMIN);  // Only show USER and ADMIN roles
-        roleComboBox.setPromptText("Select Role");
-        roleComboBox.setMaxWidth(Double.MAX_VALUE);
-
         TextField usernameField = new TextField();
         usernameField.setPromptText("Username");
         usernameField.setMaxWidth(Double.MAX_VALUE);
@@ -363,18 +358,17 @@ public class SavingsApplication extends Application {
 
         HBox buttonBox = new HBox(15);
         buttonBox.setAlignment(javafx.geometry.Pos.CENTER);
-        
+
         Button loginButton = new Button("Login");
         Button registerButton = new Button("Register");
-        
+
         buttonBox.getChildren().addAll(loginButton, registerButton);
 
-        loginButton.setOnAction(e -> handleLogin(usernameField.getText(), passwordField.getText(), roleComboBox.getValue()));
-        registerButton.setOnAction(e -> showRegistrationScreen(roleComboBox.getValue()));
+        loginButton.setOnAction(e -> handleLogin(usernameField.getText(), passwordField.getText()));
+        registerButton.setOnAction(e -> showRegistrationScreen(null)); // You may want to update registration as well
 
         formBox.getChildren().addAll(
             new Label("Login to Your Account"),
-            roleComboBox,
             usernameField,
             passwordField,
             buttonBox
@@ -391,9 +385,9 @@ public class SavingsApplication extends Application {
         primaryStage.show();
     }
 
-    private void handleLogin(String username, String password, Role role) {
-        if (role == null) {
-            showAlert("Error", "Please select a role", Alert.AlertType.ERROR);
+    private void handleLogin(String username, String password) {
+        if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
+            showAlert("Error", "Please enter both username and password", Alert.AlertType.ERROR);
             return;
         }
 
@@ -401,7 +395,6 @@ public class SavingsApplication extends Application {
             System.out.println("\n=== Login Attempt ===");
             System.out.println("Username: " + username);
             System.out.println("Password: " + password);
-            System.out.println("Role: " + role);
 
             // Check if user exists
             User user = userService.getUserByUsername(username);
@@ -412,20 +405,17 @@ public class SavingsApplication extends Application {
                 System.out.println("- Username: " + user.getUsername());
                 System.out.println("- Role: " + user.getRole());
                 System.out.println("- Password match: " + user.getPassword().equals(password));
-                System.out.println("- Role match: " + (user.getRole() == role));
             }
 
-            if (user != null && user.getPassword().equals(password) && user.getRole() == role) {
+            if (user != null && user.getPassword().equals(password)) {
                 currentUser = user;
                 showMainMenu();
             } else {
-                String errorMessage = "Invalid credentials or role mismatch";
+                String errorMessage = "Invalid credentials";
                 if (user == null) {
                     errorMessage = "User not found";
                 } else if (!user.getPassword().equals(password)) {
                     errorMessage = "Invalid password";
-                } else if (user.getRole() != role) {
-                    errorMessage = "Role mismatch. Expected: " + role + ", Found: " + user.getRole();
                 }
                 showAlert("Error", errorMessage, Alert.AlertType.ERROR);
             }
@@ -629,7 +619,6 @@ public class SavingsApplication extends Application {
         TableColumn<Group, String> statusCol = new TableColumn<>("Status");
         TableColumn<Group, Integer> memberCountCol = new TableColumn<>("Members");
         TableColumn<Group, String> contributionCol = new TableColumn<>("Monthly Contribution");
-        TableColumn<Group, String> totalAmountCol = new TableColumn<>("Total Amount");
         TableColumn<Group, String> paidAmountCol = new TableColumn<>("Paid Amount");
         
         // Set up cell value factories
@@ -643,8 +632,6 @@ public class SavingsApplication extends Application {
         });
         contributionCol.setCellValueFactory(cellData -> 
             new SimpleStringProperty(cellData.getValue().getMonthlyContribution().toString() + " SEK"));
-        totalAmountCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getTotalAmount().toString() + " SEK"));
         paidAmountCol.setCellValueFactory(cellData -> {
             Group group = cellData.getValue();
             // Get all payments for this group
@@ -658,7 +645,7 @@ public class SavingsApplication extends Application {
         });
         paidAmountCol.setPrefWidth(150);
 
-        mainTable.getColumns().addAll(groupNameCol, statusCol, memberCountCol, contributionCol, totalAmountCol, paidAmountCol);
+        mainTable.getColumns().addAll(groupNameCol, statusCol, memberCountCol, contributionCol, paidAmountCol);
 
         // Add action buttons for selected group
         HBox selectedGroupActions = new HBox(10);
@@ -1056,14 +1043,12 @@ public class SavingsApplication extends Application {
         TableColumn<Group, String> groupNameCol = new TableColumn<>("Group Name");
         TableColumn<Group, String> statusCol = new TableColumn<>("Status");
         TableColumn<Group, String> contributionCol = new TableColumn<>("Monthly Contribution");
-        TableColumn<Group, String> totalAmountCol = new TableColumn<>("Total Amount");
         TableColumn<Group, String> turnOrderCol = new TableColumn<>("Your Turn");
 
         // Set column widths
         groupNameCol.setPrefWidth(200);
         statusCol.setPrefWidth(150);
         contributionCol.setPrefWidth(150);
-        totalAmountCol.setPrefWidth(150);
         turnOrderCol.setPrefWidth(100);
 
         groupNameCol.setCellValueFactory(cellData -> 
@@ -1072,8 +1057,6 @@ public class SavingsApplication extends Application {
             new SimpleStringProperty(cellData.getValue().getStatus().toString()));
         contributionCol.setCellValueFactory(cellData -> 
             new SimpleStringProperty(cellData.getValue().getMonthlyContribution().toString() + " SEK"));
-        totalAmountCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getTotalAmount().toString() + " SEK"));
         turnOrderCol.setCellValueFactory(cellData -> {
             Group group = cellData.getValue();
             List<Participant> participants = participantService.getByGroup(group);
@@ -1085,7 +1068,7 @@ public class SavingsApplication extends Application {
             return new SimpleStringProperty("-");
         });
 
-        groupsTable.getColumns().addAll(groupNameCol, statusCol, contributionCol, totalAmountCol, turnOrderCol);
+        groupsTable.getColumns().addAll(groupNameCol, statusCol, contributionCol, turnOrderCol);
 
         // Create payments to make table
         TableView<Payment> paymentsToMakeTable = new TableView<>();
@@ -1102,7 +1085,7 @@ public class SavingsApplication extends Application {
         amountCol.setCellValueFactory(cellData -> 
             new SimpleStringProperty(cellData.getValue().getAmount().toString() + " SEK"));
         dueDateCol.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getDueDate().toString()));
+            new SimpleStringProperty(cellData.getValue().getDueDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))));
         statusCol2.setCellValueFactory(cellData -> 
             new SimpleStringProperty(cellData.getValue().getPaymentStatus().toString()));
 
@@ -1149,7 +1132,7 @@ public class SavingsApplication extends Application {
         amountCol2.setCellValueFactory(cellData -> 
             new SimpleStringProperty(cellData.getValue().getAmount().toString() + " SEK"));
         dueDateCol2.setCellValueFactory(cellData -> 
-            new SimpleStringProperty(cellData.getValue().getDueDate().toString()));
+            new SimpleStringProperty(cellData.getValue().getDueDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")).toString()));
         statusCol3.setCellValueFactory(cellData -> 
             new SimpleStringProperty(cellData.getValue().getPaymentStatus().toString()));
 
@@ -1492,6 +1475,7 @@ public class SavingsApplication extends Application {
         
         Button editProfileBtn = new Button("Save Changes");
         Button changePasswordBtn = new Button("Change Password");
+        Button refreshProfileBtn = new Button("Refresh");
 
         // Add edit profile functionality
         editProfileBtn.setOnAction(e -> {
@@ -1509,6 +1493,22 @@ public class SavingsApplication extends Application {
                 showAlert("Success", "Profile updated successfully", Alert.AlertType.INFORMATION);
             } catch (Exception ex) {
                 showAlert("Error", "Failed to update profile: " + ex.getMessage(), Alert.AlertType.ERROR);
+            }
+        });
+
+        // Add refresh profile functionality
+        refreshProfileBtn.setOnAction(e -> {
+            User refreshedUser = userService.getUserByUsername(currentUser.getUsername());
+            if (refreshedUser != null) {
+                currentUser = refreshedUser;
+                emailField.setText(currentUser.getEmail());
+                firstNameField.setText(currentUser.getFirstName());
+                lastNameField.setText(currentUser.getLastName());
+                mobileField.setText(currentUser.getMobileNumber());
+                bankAccountField.setText(currentUser.getBankAccount());
+                clearingNumberField.setText(currentUser.getClearingNumber());
+                String refreshedBalance = currentUser.getCurrentBalance() != null ? currentUser.getCurrentBalance().toString() + " SEK" : "0.00 SEK";
+                currentBalanceValue.setText(refreshedBalance);
             }
         });
 
@@ -1565,7 +1565,7 @@ public class SavingsApplication extends Application {
             });
         });
 
-        buttonBox.getChildren().addAll(editProfileBtn, changePasswordBtn);
+        buttonBox.getChildren().addAll(editProfileBtn, changePasswordBtn, refreshProfileBtn);
 
         // Add all components to the content
         content.getChildren().addAll(
@@ -1755,22 +1755,26 @@ public class SavingsApplication extends Application {
                     payment.setPaymentStatus(PaymentStatus.PAID);
                     payment.setPaidAt(LocalDateTime.now());
                     paymentService.updatePayment(payment);
-                    
+
+                    // Deduct paid amount from current user's balance
+                    BigDecimal newBalance = currentUser.getCurrentBalance().subtract(payment.getAmount());
+                    currentUser.setCurrentBalance(newBalance);
+                    userService.updateUser(currentUser);
+
                     // Update the round status if all payments for this round are paid
                     Round round = payment.getRound();
                     if (round != null) {
                         List<Payment> roundPayments = paymentService.getByRound(round);
                         boolean allPaid = roundPayments.stream()
                             .allMatch(p -> p.getPaymentStatus() == PaymentStatus.PAID);
-                        
                         if (allPaid) {
                             round.setStatus(RoundStatus.COMPLETED);
                             roundService.updateRound(round);
                         }
                     }
-                    
+
                     showAlert("Success", "Payment processed successfully", Alert.AlertType.INFORMATION);
-                    
+
                     // Refresh the table
                     Scene dialogScene = dialog.getDialogPane().getScene();
                     if (dialogScene != null) {
