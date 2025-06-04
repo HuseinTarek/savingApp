@@ -16,6 +16,9 @@ import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.IntegerProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.util.StringConverter;
+import javafx.beans.property.SimpleLongProperty;
+import javafx.geometry.Pos;
 
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -27,7 +30,6 @@ import java.util.ArrayList;
 import java.util.stream.IntStream;
 import java.util.Scanner;
 import java.util.Optional;
-import javafx.util.StringConverter;
 import java.util.Set;
 import org.hibernate.Session;
 import com.swedenrosca.service.*;
@@ -121,6 +123,7 @@ public class SavingsApplication extends Application {
         this.primaryStage = primaryStage;
         try {
             // Clear all existing data using services
+            System.out.println("\n=== Clearing existing data ===");
             paymentService.deleteAll();
             roundService.deleteAll();
             participantService.deleteAll();
@@ -128,10 +131,21 @@ public class SavingsApplication extends Application {
             userService.deleteAll();
             monthlyPaymentService.deleteAll();
             paymentOptionService.deleteAll();
+            monthOptionService.deleteAll();
+            paymentPlanService.deleteAll();
+            System.out.println("All existing data cleared.");
            
             // Generate basic demo data (users, payment plans, options)
+            System.out.println("\n=== Starting demo data generation ===");
             demoDataGenerator.generateAllDemoData();
             System.out.println("Demo data generation finished.");
+
+            // Verify users were created
+            List<User> allUsers = userService.getAllUsers();
+            System.out.println("\nVerifying created users:");
+            for (User user : allUsers) {
+                System.out.println("- " + user.getUsername() + " (ID: " + user.getId() + ", Role: " + user.getRole() + ")");
+            }
         } catch (Exception e) {
             System.err.println("Error during startup: " + e.getMessage());
             e.printStackTrace();
@@ -384,25 +398,36 @@ public class SavingsApplication extends Application {
         }
 
         try {
-            System.out.println("Attempting login with:");
+            System.out.println("\n=== Login Attempt ===");
             System.out.println("Username: " + username);
             System.out.println("Password: " + password);
             System.out.println("Role: " + role);
 
+            // Check if user exists
             User user = userService.getUserByUsername(username);
-            System.out.println("Found user: " + (user != null ? user.getUsername() : "null"));
-
+            System.out.println("User found: " + (user != null ? "Yes" : "No"));
+            
             if (user != null) {
-                System.out.println("User role: " + user.getRole());
-                System.out.println("Password match: " + user.getPassword().equals(password));
-                System.out.println("Role match: " + (user.getRole() == role));
+                System.out.println("User details:");
+                System.out.println("- Username: " + user.getUsername());
+                System.out.println("- Role: " + user.getRole());
+                System.out.println("- Password match: " + user.getPassword().equals(password));
+                System.out.println("- Role match: " + (user.getRole() == role));
             }
 
             if (user != null && user.getPassword().equals(password) && user.getRole() == role) {
                 currentUser = user;
                 showMainMenu();
             } else {
-                showAlert("Error", "Invalid credentials or role mismatch", Alert.AlertType.ERROR);
+                String errorMessage = "Invalid credentials or role mismatch";
+                if (user == null) {
+                    errorMessage = "User not found";
+                } else if (!user.getPassword().equals(password)) {
+                    errorMessage = "Invalid password";
+                } else if (user.getRole() != role) {
+                    errorMessage = "Role mismatch. Expected: " + role + ", Found: " + user.getRole();
+                }
+                showAlert("Error", errorMessage, Alert.AlertType.ERROR);
             }
         } catch (Exception e) {
             System.err.println("Login error: " + e.getMessage());
@@ -515,7 +540,8 @@ public class SavingsApplication extends Application {
             case ADMIN -> {
                 tabPane.getTabs().addAll(
                     createDashboardTab(),  // New combined dashboard tab
-                    createUserManagementTab()  // Keep user management separate
+                    createUserManagementTab(),  // Keep user management separate
+                    createMonthPaymentManagementTab()  // New tab for month and payment management
                 );
             }
             case USER -> {
@@ -596,6 +622,7 @@ public class SavingsApplication extends Application {
 
         // Create main table
         TableView<Group> mainTable = new TableView<>();
+        mainTable.setPrefHeight(400); // Increased from default to 400
         
         // Basic columns
         TableColumn<Group, String> groupNameCol = new TableColumn<>("Group Name");
@@ -603,6 +630,7 @@ public class SavingsApplication extends Application {
         TableColumn<Group, Integer> memberCountCol = new TableColumn<>("Members");
         TableColumn<Group, String> contributionCol = new TableColumn<>("Monthly Contribution");
         TableColumn<Group, String> totalAmountCol = new TableColumn<>("Total Amount");
+        TableColumn<Group, String> paidAmountCol = new TableColumn<>("Paid Amount");
         
         // Set up cell value factories
         groupNameCol.setCellValueFactory(cellData -> 
@@ -617,8 +645,20 @@ public class SavingsApplication extends Application {
             new SimpleStringProperty(cellData.getValue().getMonthlyContribution().toString() + " SEK"));
         totalAmountCol.setCellValueFactory(cellData -> 
             new SimpleStringProperty(cellData.getValue().getTotalAmount().toString() + " SEK"));
+        paidAmountCol.setCellValueFactory(cellData -> {
+            Group group = cellData.getValue();
+            // Get all payments for this group
+            List<Payment> payments = paymentService.getByGroup(group);
+            // Sum all PAID payments
+            java.math.BigDecimal paidSum = payments.stream()
+                .filter(p -> p.getPaymentStatus() == PaymentStatus.PAID)
+                .map(Payment::getAmount)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+            return new SimpleStringProperty(paidSum + " SEK");
+        });
+        paidAmountCol.setPrefWidth(150);
 
-        mainTable.getColumns().addAll(groupNameCol, statusCol, memberCountCol, contributionCol, totalAmountCol);
+        mainTable.getColumns().addAll(groupNameCol, statusCol, memberCountCol, contributionCol, totalAmountCol, paidAmountCol);
 
         // Add action buttons for selected group
         HBox selectedGroupActions = new HBox(10);
@@ -943,6 +983,47 @@ public class SavingsApplication extends Application {
         Label headerLabel = new Label("My Groups and Payments");
         headerLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
 
+        // Create summary section
+        HBox summaryBox = new HBox(20);
+        summaryBox.setPadding(new Insets(20));
+        summaryBox.setStyle("-fx-background-color: #f5f5f5; -fx-padding: 20px; -fx-border-color: #ddd; -fx-border-width: 1px;");
+        summaryBox.setPrefHeight(100); // Reduced height from 150 to 100
+        
+        // Create summary sections
+        VBox toPayBox = new VBox(5); // Reduced spacing from 10 to 5
+        toPayBox.setAlignment(Pos.CENTER);
+        Label toPayHeader = new Label("To Pay");
+        toPayHeader.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;"); // Reduced font size
+        Label toPayLabel = new Label("0 SEK");
+        toPayLabel.setStyle("-fx-font-size: 14px;"); // Reduced font size
+        toPayBox.getChildren().addAll(toPayHeader, toPayLabel);
+        
+        VBox toReceiveBox = new VBox(5);
+        toReceiveBox.setAlignment(Pos.CENTER);
+        Label toReceiveHeader = new Label("To Receive");
+        toReceiveHeader.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;");
+        Label toReceiveLabel = new Label("0 SEK");
+        toReceiveLabel.setStyle("-fx-font-size: 14px;");
+        toReceiveBox.getChildren().addAll(toReceiveHeader, toReceiveLabel);
+        
+        VBox nextPaymentBox = new VBox(5);
+        nextPaymentBox.setAlignment(Pos.CENTER);
+        Label nextPaymentHeader = new Label("Next Payment");
+        nextPaymentHeader.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;");
+        Label nextPaymentLabel = new Label("None");
+        nextPaymentLabel.setStyle("-fx-font-size: 14px;");
+        nextPaymentBox.getChildren().addAll(nextPaymentHeader, nextPaymentLabel);
+        
+        VBox nextReceiptBox = new VBox(5);
+        nextReceiptBox.setAlignment(Pos.CENTER);
+        Label nextReceiptHeader = new Label("Next Receipt");
+        nextReceiptHeader.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;");
+        Label nextReceiptLabel = new Label("None");
+        nextReceiptLabel.setStyle("-fx-font-size: 14px;");
+        nextReceiptBox.getChildren().addAll(nextReceiptHeader, nextReceiptLabel);
+        
+        summaryBox.getChildren().addAll(toPayBox, toReceiveBox, nextPaymentBox, nextReceiptBox);
+
         // Create action buttons section
         HBox actionButtonsBox = new HBox(10);
         actionButtonsBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
@@ -950,31 +1031,40 @@ public class SavingsApplication extends Application {
         
         Button joinGroupBtn = new Button("Join a Group");
         Button viewAllGroupsBtn = new Button("View All Groups");
-        Button refreshDashboardBtn = new Button("🔄 Refresh Dashboard");
-        Button clearGroupsBtn = new Button("Clear Groups Table");
-        Button clearPaymentsBtn = new Button("Clear Payments Table");
+        Button refreshDashboardBtn = new Button("Refresh Dashboard");
+        
+        // Set consistent button sizes
+        joinGroupBtn.setPrefWidth(150);
+        viewAllGroupsBtn.setPrefWidth(150);
+        refreshDashboardBtn.setPrefWidth(150);
+        
+        // Set consistent button heights
+        joinGroupBtn.setPrefHeight(30);
+        viewAllGroupsBtn.setPrefHeight(30);
+        refreshDashboardBtn.setPrefHeight(30);
         
         actionButtonsBox.getChildren().addAll(
             joinGroupBtn,
             viewAllGroupsBtn,
-            refreshDashboardBtn,
-            clearGroupsBtn,
-            clearPaymentsBtn
+            refreshDashboardBtn
         );
 
         // Create groups table
         TableView<Group> groupsTable = new TableView<>();
+        groupsTable.setPrefHeight(400); // Increased from 300 to 400
         
         TableColumn<Group, String> groupNameCol = new TableColumn<>("Group Name");
         TableColumn<Group, String> statusCol = new TableColumn<>("Status");
         TableColumn<Group, String> contributionCol = new TableColumn<>("Monthly Contribution");
         TableColumn<Group, String> totalAmountCol = new TableColumn<>("Total Amount");
+        TableColumn<Group, String> turnOrderCol = new TableColumn<>("Your Turn");
 
         // Set column widths
-        groupNameCol.setPrefWidth(250);
+        groupNameCol.setPrefWidth(200);
         statusCol.setPrefWidth(150);
-        contributionCol.setPrefWidth(200);
-        totalAmountCol.setPrefWidth(200);
+        contributionCol.setPrefWidth(150);
+        totalAmountCol.setPrefWidth(150);
+        turnOrderCol.setPrefWidth(100);
 
         groupNameCol.setCellValueFactory(cellData -> 
             new SimpleStringProperty(cellData.getValue().getGroupName()));
@@ -984,18 +1074,90 @@ public class SavingsApplication extends Application {
             new SimpleStringProperty(cellData.getValue().getMonthlyContribution().toString() + " SEK"));
         totalAmountCol.setCellValueFactory(cellData -> 
             new SimpleStringProperty(cellData.getValue().getTotalAmount().toString() + " SEK"));
+        turnOrderCol.setCellValueFactory(cellData -> {
+            Group group = cellData.getValue();
+            List<Participant> participants = participantService.getByGroup(group);
+            for (Participant p : participants) {
+                if (p.getUser().getId().equals(currentUser.getId())) {
+                    return new SimpleStringProperty(String.valueOf(p.getTurnOrder()));
+                }
+            }
+            return new SimpleStringProperty("-");
+        });
 
-        groupsTable.getColumns().addAll(groupNameCol, statusCol, contributionCol, totalAmountCol);
+        groupsTable.getColumns().addAll(groupNameCol, statusCol, contributionCol, totalAmountCol, turnOrderCol);
+
+        // Create payments to make table
+        TableView<Payment> paymentsToMakeTable = new TableView<>();
+        paymentsToMakeTable.setPrefHeight(400); // Increased from 300 to 400
+        
+        TableColumn<Payment, String> groupNameCol2 = new TableColumn<>("Group");
+        TableColumn<Payment, String> amountCol = new TableColumn<>("Amount");
+        TableColumn<Payment, String> dueDateCol = new TableColumn<>("Due Date");
+        TableColumn<Payment, String> statusCol2 = new TableColumn<>("Status");
+        TableColumn<Payment, Void> actionCol = new TableColumn<>("Action");
+
+        groupNameCol2.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getGroup().getGroupName()));
+        amountCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getAmount().toString() + " SEK"));
+        dueDateCol.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getDueDate().toString()));
+        statusCol2.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getPaymentStatus().toString()));
+
+        // Add Pay button to action column
+        actionCol.setCellFactory(col -> new TableCell<>() {
+            private final Button payButton = new Button("Pay");
+            
+            {
+                payButton.setOnAction(event -> {
+                    Payment payment = getTableView().getItems().get(getIndex());
+                    handlePayment(payment);
+                });
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty) {
+                    setGraphic(null);
+                } else {
+                    Payment payment = getTableView().getItems().get(getIndex());
+                    if (payment.getPaymentStatus() != PaymentStatus.PAID) {
+                        setGraphic(payButton);
+                    } else {
+                        setGraphic(null);
+                    }
+                }
+            }
+        });
+
+        paymentsToMakeTable.getColumns().addAll(groupNameCol2, amountCol, dueDateCol, statusCol2, actionCol);
+
+        // Create payments to receive table
+        TableView<Payment> paymentsToReceiveTable = new TableView<>();
+        paymentsToReceiveTable.setPrefHeight(400); // Increased from 300 to 400
+        
+        TableColumn<Payment, String> groupNameCol3 = new TableColumn<>("Group");
+        TableColumn<Payment, String> amountCol2 = new TableColumn<>("Amount");
+        TableColumn<Payment, String> dueDateCol2 = new TableColumn<>("Due Date");
+        TableColumn<Payment, String> statusCol3 = new TableColumn<>("Status");
+
+        groupNameCol3.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getGroup().getGroupName()));
+        amountCol2.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getAmount().toString() + " SEK"));
+        dueDateCol2.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getDueDate().toString()));
+        statusCol3.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getPaymentStatus().toString()));
+
+        paymentsToReceiveTable.getColumns().addAll(groupNameCol3, amountCol2, dueDateCol2, statusCol3);
 
         // Load user's groups
         List<Group> userGroups = groupService.getByMember(currentUser.getId());
         groupsTable.getItems().addAll(userGroups);
-
-        // Create current payments table
-        TableView<Payment> currentPaymentsTable = createPaymentsTable();
-
-        // Create future payments table
-        TableView<Payment> futurePaymentsTable = createPaymentsTable();
 
         // Create refresh button with icon
         refreshDashboardBtn.setStyle("-fx-font-size: 14px; -fx-padding: 8px 16px;");
@@ -1006,55 +1168,56 @@ public class SavingsApplication extends Application {
             groupsTable.getItems().addAll(freshUserGroups);
             
             // Refresh payments
-            currentPaymentsTable.getItems().clear();
-            futurePaymentsTable.getItems().clear();
+            paymentsToMakeTable.getItems().clear();
+            paymentsToReceiveTable.getItems().clear();
             
             // Get all payments for the user's groups
             List<Participant> userParticipants = participantService.getByUser(currentUser);
-            Set<Payment> userPayments = new HashSet<>(); // Changed to Set to prevent duplicates
+            Set<Payment> userPayments = new HashSet<>();
             for (Participant participant : userParticipants) {
                 userPayments.addAll(paymentService.getByGroupAndParticipant(participant.getGroup(), participant));
             }
             
-            LocalDateTime now = LocalDateTime.now();
-            
-            // Split payments into current and future
-            List<Payment> currentPayments = userPayments.stream()
-                .filter(p -> p.getDueDate().isBefore(now) || p.getDueDate().isEqual(now))
+            // Split payments into to make and to receive
+            List<Payment> paymentsToMake = userPayments.stream()
+                .filter(p -> p.getCreator().getId().equals(currentUser.getId()))
                 .collect(Collectors.toList());
                 
-            List<Payment> futurePayments = userPayments.stream()
-                .filter(p -> p.getDueDate().isAfter(now))
+            List<Payment> paymentsToReceive = userPayments.stream()
+                .filter(p -> p.getRound() != null && 
+                           p.getRound().getWinnerParticipant() != null && 
+                           p.getRound().getWinnerParticipant().getUser().getId().equals(currentUser.getId()))
                 .collect(Collectors.toList());
 
-            currentPaymentsTable.getItems().clear(); // Clear before adding
-            futurePaymentsTable.getItems().clear(); // Clear before adding
-            currentPaymentsTable.getItems().addAll(currentPayments);
-            futurePaymentsTable.getItems().addAll(futurePayments);
+            paymentsToMakeTable.getItems().addAll(paymentsToMake);
+            paymentsToReceiveTable.getItems().addAll(paymentsToReceive);
+            
+            // Update summary information
+            BigDecimal totalToPay = paymentsToMake.stream()
+                .filter(p -> p.getPaymentStatus() != PaymentStatus.PAID)
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                
+            BigDecimal totalToReceive = paymentsToReceive.stream()
+                .filter(p -> p.getPaymentStatus() != PaymentStatus.PAID)
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                
+            Optional<Payment> nextPayment = paymentsToMake.stream()
+                .filter(p -> p.getPaymentStatus() != PaymentStatus.PAID)
+                .min(Comparator.comparing(Payment::getDueDate));
+                
+            Optional<Payment> nextReceipt = paymentsToReceive.stream()
+                .filter(p -> p.getPaymentStatus() != PaymentStatus.PAID)
+                .min(Comparator.comparing(Payment::getDueDate));
+                
+            toPayLabel.setText(totalToPay + " SEK");
+            toReceiveLabel.setText(totalToReceive + " SEK");
+            nextPaymentLabel.setText(nextPayment.isPresent() ? 
+                nextPayment.get().getDueDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) : "None");
+            nextReceiptLabel.setText(nextReceipt.isPresent() ? 
+                nextReceipt.get().getDueDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) : "None");
         });
-
-        // Load initial payments
-        List<Participant> userParticipants = participantService.getByUser(currentUser);
-        Set<Payment> userPayments = new HashSet<>(); // Changed to Set to prevent duplicates
-        for (Participant participant : userParticipants) {
-            userPayments.addAll(paymentService.getByGroupAndParticipant(participant.getGroup(), participant));
-        }
-        
-        LocalDateTime now = LocalDateTime.now();
-            
-        // Split payments into current and future
-        List<Payment> currentPayments = userPayments.stream()
-            .filter(p -> p.getDueDate().isBefore(now) || p.getDueDate().isEqual(now))
-            .collect(Collectors.toList());
-            
-        List<Payment> futurePayments = userPayments.stream()
-            .filter(p -> p.getDueDate().isAfter(now))
-            .collect(Collectors.toList());
-
-        currentPaymentsTable.getItems().clear(); // Clear before adding
-        futurePaymentsTable.getItems().clear(); // Clear before adding
-        currentPaymentsTable.getItems().addAll(currentPayments);
-        futurePaymentsTable.getItems().addAll(futurePayments);
 
         // Add button handlers
         joinGroupBtn.setOnAction(e -> showJoinGroupDialog());
@@ -1063,28 +1226,22 @@ public class SavingsApplication extends Application {
             groupsTable.getItems().clear();
             groupsTable.getItems().addAll(groupService.getByMember(currentUser.getId()));
         });
-        
-        clearGroupsBtn.setOnAction(e -> {
-            groupsTable.getItems().clear();
-        });
-
-        clearPaymentsBtn.setOnAction(e -> {
-            currentPaymentsTable.getItems().clear();
-            futurePaymentsTable.getItems().clear();
-        });
 
         // Add all components to content
         content.getChildren().addAll(
             headerLabel,
+            summaryBox,
             actionButtonsBox,
             new Label("My Groups"),
             groupsTable,
-            new Label("Current Payments"),
-            refreshDashboardBtn,
-            currentPaymentsTable,
-            new Label("Future Payments"),
-            futurePaymentsTable
+            new Label("Payments to Make"),
+            paymentsToMakeTable,
+            new Label("Payments to Receive"),
+            paymentsToReceiveTable
         );
+
+        // Initial load of payments
+        refreshDashboardBtn.fire();
 
         tab.setContent(content);
         return tab;
@@ -1444,11 +1601,13 @@ public class SavingsApplication extends Application {
         // Create current payments tab
         Tab currentPaymentsTab = new Tab("Current Payments");
         TableView<Payment> currentPaymentsTable = createPaymentsTable();
+        currentPaymentsTable.setPrefHeight(400); // Increased from default to 400
         currentPaymentsTab.setContent(currentPaymentsTable);
         
         // Create future payments tab
         Tab futurePaymentsTab = new Tab("Future Payments");
         TableView<Payment> futurePaymentsTable = createPaymentsTable();
+        futurePaymentsTable.setPrefHeight(400); // Increased from default to 400
         futurePaymentsTab.setContent(futurePaymentsTable);
         
         tabPane.getTabs().addAll(currentPaymentsTab, futurePaymentsTab);
@@ -1501,7 +1660,6 @@ public class SavingsApplication extends Application {
         TableView<Payment> table = new TableView<>();
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
-
         // Group Name column
         TableColumn<Payment, String> groupNameCol = new TableColumn<>("Group Name");
         groupNameCol.setCellValueFactory(cellData -> {
@@ -1512,8 +1670,6 @@ public class SavingsApplication extends Application {
             return new SimpleStringProperty(""); // Or "N/A" or some other placeholder
         });
         groupNameCol.setPrefWidth(200);
-
-
 
         // Amount column
         TableColumn<Payment, String> amountCol = new TableColumn<>("Amount");
@@ -1555,11 +1711,24 @@ public class SavingsApplication extends Application {
         return table;
     }
 
+    private Boolean isBalanceEnough(Payment payment) {
+        if (payment.getAmount().compareTo(currentUser.getCurrentBalance()) > 0) {
+            showAlert("Error", "Insufficient balance", Alert.AlertType.ERROR);
+            return false;
+        }
+        return true;
+    }
+
     private void handlePayment(Payment payment) {
         // Check if payment is already paid
         if (payment.getPaymentStatus() == PaymentStatus.PAID) {
             showAlert("Error", "This payment has already been paid", Alert.AlertType.ERROR);
             return;
+        }
+
+        if (!isBalanceEnough(payment)) {
+            showAlert("Error", "There is not enough balance to pay this payment", Alert.AlertType.ERROR);
+
         }
 
         // Create confirmation dialog
@@ -1603,15 +1772,283 @@ public class SavingsApplication extends Application {
                     showAlert("Success", "Payment processed successfully", Alert.AlertType.INFORMATION);
                     
                     // Refresh the table
-                    TableView<Payment> table = (TableView<Payment>) dialog.getDialogPane().getScene().lookup(".table-view");
-                    if (table != null) {
-                        table.refresh();
+                    Scene dialogScene = dialog.getDialogPane().getScene();
+                    if (dialogScene != null) {
+                        TableView<Payment> table = (TableView<Payment>) dialogScene.lookup(".table-view");
+                        if (table != null) {
+                            table.refresh();
+                        }
                     }
                 } catch (Exception e) {
                     showAlert("Error", "Failed to process payment: " + e.getMessage(), Alert.AlertType.ERROR);
                 }
             }
         });
+    }
+
+    private Tab createMonthPaymentManagementTab() {
+        Tab tab = new Tab("Month & Payment Options");
+        VBox content = new VBox(20);
+        content.setPadding(new Insets(20));
+
+        // Create header
+        Label headerLabel = new Label("Month & Payment Options Management");
+        headerLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
+
+        // Create tab pane for month and payment options
+        TabPane optionsTabPane = new TabPane();
+        
+        // Month Options Tab
+        Tab monthTab = new Tab("Month Options");
+        VBox monthContent = new VBox(10);
+        monthContent.setPadding(new Insets(10));
+
+        // Month Options Table
+        TableView<MonthOption> monthTable = new TableView<>();
+        monthTable.setPrefHeight(400); // Increased from default to 400
+        TableColumn<MonthOption, Long> monthIdCol = new TableColumn<>("ID");
+        monthIdCol.setCellValueFactory(cellData -> new SimpleLongProperty(cellData.getValue().getId()).asObject());
+        
+        TableColumn<MonthOption, Integer> monthCountCol = new TableColumn<>("Months Count");
+        monthCountCol.setCellValueFactory(cellData -> new SimpleIntegerProperty(cellData.getValue().getMonthsCount()).asObject());
+        
+        monthTable.getColumns().addAll(monthIdCol, monthCountCol);
+
+        // Month Options Buttons
+        HBox monthButtonBox = new HBox(10);
+        Button addMonthBtn = new Button("Add Month Option");
+        Button editMonthBtn = new Button("Edit Month Option");
+        Button deleteMonthBtn = new Button("Delete Month Option");
+        Button refreshMonthBtn = new Button("Refresh");
+        
+        monthButtonBox.getChildren().addAll(addMonthBtn, editMonthBtn, deleteMonthBtn, refreshMonthBtn);
+        
+        // Add Month Dialog
+        addMonthBtn.setOnAction(e -> {
+            Dialog<MonthOption> dialog = new Dialog<>();
+            dialog.setTitle("Add Month Option");
+            dialog.setHeaderText("Enter number of months");
+
+            TextField monthsField = new TextField();
+            monthsField.setPromptText("Number of months");
+
+            dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+            dialog.getDialogPane().setContent(new VBox(10, new Label("Months Count:"), monthsField));
+
+            dialog.setResultConverter(buttonType -> {
+                if (buttonType == ButtonType.OK) {
+                    try {
+                        int months = Integer.parseInt(monthsField.getText());
+                        MonthOption newOption = new MonthOption(months);
+                        monthOptionService.save(newOption);
+                        return newOption;
+                    } catch (NumberFormatException ex) {
+                        showAlert("Error", "Please enter a valid number", Alert.AlertType.ERROR);
+                    }
+                }
+                return null;
+            });
+
+            dialog.showAndWait().ifPresent(option -> refreshMonthTable(monthTable));
+        });
+
+        // Edit Month Dialog
+        editMonthBtn.setOnAction(e -> {
+            MonthOption selected = monthTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                showAlert("Error", "Please select a month option to edit", Alert.AlertType.ERROR);
+                return;
+            }
+
+            Dialog<MonthOption> dialog = new Dialog<>();
+            dialog.setTitle("Edit Month Option");
+            dialog.setHeaderText("Edit number of months");
+
+            TextField monthsField = new TextField(String.valueOf(selected.getMonthsCount()));
+            monthsField.setPromptText("Number of months");
+
+            dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+            dialog.getDialogPane().setContent(new VBox(10, new Label("Months Count:"), monthsField));
+
+            dialog.setResultConverter(buttonType -> {
+                if (buttonType == ButtonType.OK) {
+                    try {
+                        int months = Integer.parseInt(monthsField.getText());
+                        selected.setMonthsCount(months);
+                        monthOptionService.update(selected);
+                        return selected;
+                    } catch (NumberFormatException ex) {
+                        showAlert("Error", "Please enter a valid number", Alert.AlertType.ERROR);
+                    }
+                }
+                return null;
+            });
+
+            dialog.showAndWait().ifPresent(option -> refreshMonthTable(monthTable));
+        });
+
+        // Delete Month
+        deleteMonthBtn.setOnAction(e -> {
+            MonthOption selected = monthTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                showAlert("Error", "Please select a month option to delete", Alert.AlertType.ERROR);
+                return;
+            }
+
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.setTitle("Confirm Delete");
+            alert.setHeaderText("Delete Month Option");
+            alert.setContentText("Are you sure you want to delete this month option?");
+
+            alert.showAndWait().ifPresent(response -> {
+                if (response == ButtonType.OK) {
+                    monthOptionService.deleteById(selected.getId());
+                    refreshMonthTable(monthTable);
+                }
+            });
+        });
+
+        // Refresh Month Table
+        refreshMonthBtn.setOnAction(e -> refreshMonthTable(monthTable));
+
+        monthContent.getChildren().addAll(monthButtonBox, monthTable);
+        monthTab.setContent(monthContent);
+
+        // Payment Options Tab
+        Tab paymentTab = new Tab("Payment Options");
+        VBox paymentContent = new VBox(10);
+        paymentContent.setPadding(new Insets(10));
+
+        // Payment Options Table
+        TableView<PaymentOption> paymentTable = new TableView<>();
+        paymentTable.setPrefHeight(400); // Increased from default to 400
+        TableColumn<PaymentOption, Long> paymentIdCol = new TableColumn<>("ID");
+        paymentIdCol.setCellValueFactory(cellData -> new SimpleLongProperty(cellData.getValue().getId()).asObject());
+        
+        TableColumn<PaymentOption, Integer> paymentAmountCol = new TableColumn<>("Monthly Payment (SEK)");
+        paymentAmountCol.setCellValueFactory(cellData -> new SimpleIntegerProperty(cellData.getValue().getMonthlyPayment()).asObject());
+        
+        paymentTable.getColumns().addAll(paymentIdCol, paymentAmountCol);
+
+        // Payment Options Buttons
+        HBox paymentButtonBox = new HBox(10);
+        Button addPaymentBtn = new Button("Add Payment Option");
+        Button editPaymentBtn = new Button("Edit Payment Option");
+        Button deletePaymentBtn = new Button("Delete Payment Option");
+        Button refreshPaymentBtn = new Button("Refresh");
+        
+        paymentButtonBox.getChildren().addAll(addPaymentBtn, editPaymentBtn, deletePaymentBtn, refreshPaymentBtn);
+
+        // Add Payment Dialog
+        addPaymentBtn.setOnAction(e -> {
+            Dialog<PaymentOption> dialog = new Dialog<>();
+            dialog.setTitle("Add Payment Option");
+            dialog.setHeaderText("Enter monthly payment amount");
+
+            TextField amountField = new TextField();
+            amountField.setPromptText("Monthly payment amount (SEK)");
+
+            dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+            dialog.getDialogPane().setContent(new VBox(10, new Label("Monthly Payment (SEK):"), amountField));
+
+            dialog.setResultConverter(buttonType -> {
+                if (buttonType == ButtonType.OK) {
+                    try {
+                        int amount = Integer.parseInt(amountField.getText());
+                        PaymentOption newOption = new PaymentOption(amount);
+                        paymentOptionService.save(newOption);
+                        return newOption;
+                    } catch (NumberFormatException ex) {
+                        showAlert("Error", "Please enter a valid number", Alert.AlertType.ERROR);
+                    }
+                }
+                return null;
+            });
+
+            dialog.showAndWait().ifPresent(option -> refreshPaymentTable(paymentTable));
+        });
+
+        // Edit Payment Dialog
+        editPaymentBtn.setOnAction(e -> {
+            PaymentOption selected = paymentTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                showAlert("Error", "Please select a payment option to edit", Alert.AlertType.ERROR);
+                return;
+            }
+
+            Dialog<PaymentOption> dialog = new Dialog<>();
+            dialog.setTitle("Edit Payment Option");
+            dialog.setHeaderText("Edit monthly payment amount");
+
+            TextField amountField = new TextField(String.valueOf(selected.getMonthlyPayment()));
+            amountField.setPromptText("Monthly payment amount (SEK)");
+
+            dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+            dialog.getDialogPane().setContent(new VBox(10, new Label("Monthly Payment (SEK):"), amountField));
+
+            dialog.setResultConverter(buttonType -> {
+                if (buttonType == ButtonType.OK) {
+                    try {
+                        int amount = Integer.parseInt(amountField.getText());
+                        selected.setMonthlyPayment(amount);
+                        paymentOptionService.update(selected);
+                        return selected;
+                    } catch (NumberFormatException ex) {
+                        showAlert("Error", "Please enter a valid number", Alert.AlertType.ERROR);
+                    }
+                }
+                return null;
+            });
+
+            dialog.showAndWait().ifPresent(option -> refreshPaymentTable(paymentTable));
+        });
+
+        // Delete Payment
+        deletePaymentBtn.setOnAction(e -> {
+            PaymentOption selected = paymentTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                showAlert("Error", "Please select a payment option to delete", Alert.AlertType.ERROR);
+                return;
+            }
+
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.setTitle("Confirm Delete");
+            alert.setHeaderText("Delete Payment Option");
+            alert.setContentText("Are you sure you want to delete this payment option?");
+
+            alert.showAndWait().ifPresent(response -> {
+                if (response == ButtonType.OK) {
+                    paymentOptionService.deleteById(selected.getId());
+                    refreshPaymentTable(paymentTable);
+                }
+            });
+        });
+
+        // Refresh Payment Table
+        refreshPaymentBtn.setOnAction(e -> refreshPaymentTable(paymentTable));
+
+        paymentContent.getChildren().addAll(paymentButtonBox, paymentTable);
+        paymentTab.setContent(paymentContent);
+
+        optionsTabPane.getTabs().addAll(monthTab, paymentTab);
+        content.getChildren().addAll(headerLabel, optionsTabPane);
+        tab.setContent(content);
+
+        // Initial data load
+        refreshMonthTable(monthTable);
+        refreshPaymentTable(paymentTable);
+
+        return tab;
+    }
+
+    private void refreshMonthTable(TableView<MonthOption> table) {
+        table.getItems().clear();
+        table.getItems().addAll(monthOptionService.getAll());
+    }
+
+    private void refreshPaymentTable(TableView<PaymentOption> table) {
+        table.getItems().clear();
+        table.getItems().addAll(paymentOptionService.getAllMonthlyPayments());
     }
 
     public static void main(String[] args) {
