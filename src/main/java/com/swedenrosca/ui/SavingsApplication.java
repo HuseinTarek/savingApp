@@ -41,6 +41,8 @@ public class SavingsApplication extends Application {
     private final org.hibernate.SessionFactory sessionFactory = SingletonSessionFactory.getSessionFactory();
     private User currentUser;
     private Stage primaryStage;
+    private TableView<Payment> paymentsToMakeTable;
+    private Label toPayLabel;
 
     // Controllers
     private final MonthlyPaymentController monthlyPaymentController;
@@ -981,7 +983,7 @@ public class SavingsApplication extends Application {
         toPayBox.setAlignment(Pos.CENTER);
         Label toPayHeader = new Label("To Pay");
         toPayHeader.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;"); // Reduced font size
-        Label toPayLabel = new Label("0 SEK");
+        toPayLabel = new Label("0 SEK");
         toPayLabel.setStyle("-fx-font-size: 14px;"); // Reduced font size
         toPayBox.getChildren().addAll(toPayHeader, toPayLabel);
         
@@ -1071,7 +1073,7 @@ public class SavingsApplication extends Application {
         groupsTable.getColumns().addAll(groupNameCol, statusCol, contributionCol, turnOrderCol);
 
         // Create payments to make table
-        TableView<Payment> paymentsToMakeTable = new TableView<>();
+        paymentsToMakeTable = new TableView<>();
         paymentsToMakeTable.setPrefHeight(400); // Increased from 300 to 400
         
         TableColumn<Payment, String> groupNameCol2 = new TableColumn<>("Group");
@@ -1177,13 +1179,25 @@ public class SavingsApplication extends Application {
             
             // Update summary information
             BigDecimal totalToPay = paymentsToMake.stream()
-                .filter(p -> p.getPaymentStatus() != PaymentStatus.PAID)
+                .filter(p -> {
+                    LocalDateTime now = LocalDateTime.now();
+                    LocalDateTime paymentDate = p.getDueDate();
+                    // Check if payment is for current month
+                    return paymentDate.getYear() == now.getYear() && 
+                           paymentDate.getMonth() == now.getMonth() &&
+                           p.getPaymentStatus() != PaymentStatus.PAID;
+                })
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
                 
             BigDecimal totalToReceive = paymentsToReceive.stream()
-                .filter(p -> p.getPaymentStatus() != PaymentStatus.PAID)
-                .map(Payment::getAmount)
+                .filter(p -> {
+                    // Only get payments for current month that aren't paid yet
+                    LocalDateTime now = LocalDateTime.now();
+                    return p.getDueDate().getMonth() == now.getMonth() && 
+                           p.getPaymentStatus() != PaymentStatus.PAID;
+                })
+                .map(p -> p.getGroup().getTotalAmount()) // Get the total amount for the group
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
                 
             Optional<Payment> nextPayment = paymentsToMake.stream()
@@ -1775,14 +1789,25 @@ public class SavingsApplication extends Application {
 
                     showAlert("Success", "Payment processed successfully", Alert.AlertType.INFORMATION);
 
-                    // Refresh the table
-                    Scene dialogScene = dialog.getDialogPane().getScene();
-                    if (dialogScene != null) {
-                        TableView<Payment> table = (TableView<Payment>) dialogScene.lookup(".table-view");
-                        if (table != null) {
-                            table.refresh();
-                        }
+                    // Only refresh the payments to make table
+                    paymentsToMakeTable.getItems().clear();
+                    List<Participant> userParticipants = participantService.getByUser(currentUser);
+                    Set<Payment> userPayments = new HashSet<>();
+                    for (Participant participant : userParticipants) {
+                        userPayments.addAll(paymentService.getByGroupAndParticipant(participant.getGroup(), participant));
                     }
+                    List<Payment> paymentsToMake = userPayments.stream()
+                        .filter(p -> p.getCreator().getId().equals(currentUser.getId()))
+                        .collect(Collectors.toList());
+                    paymentsToMakeTable.getItems().addAll(paymentsToMake);
+                    
+                    // Update only the toPayLabel
+                    BigDecimal totalToPay = paymentsToMake.stream()
+                        .filter(p -> p.getPaymentStatus() != PaymentStatus.PAID)
+                        .map(Payment::getAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    toPayLabel.setText(totalToPay + " SEK");
+
                 } catch (Exception e) {
                     showAlert("Error", "Failed to process payment: " + e.getMessage(), Alert.AlertType.ERROR);
                 }
