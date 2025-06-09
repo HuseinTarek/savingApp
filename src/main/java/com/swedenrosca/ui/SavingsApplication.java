@@ -1784,6 +1784,15 @@ public class SavingsApplication extends Application {
                         if (allPaid) {
                             round.setStatus(RoundStatus.COMPLETED);
                             roundService.updateRound(round);
+
+                            // Give the group total to the winner
+                            Participant winner = round.getWinnerParticipant();
+                            if (winner != null) {
+                                User winnerUser = winner.getUser();
+                                BigDecimal groupTotal = round.getGroup().getTotalAmount();
+                                winnerUser.setCurrentBalance(winnerUser.getCurrentBalance().add(groupTotal));
+                                userService.updateUser(winnerUser);
+                            }
                         }
                     }
 
