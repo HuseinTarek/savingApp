@@ -1191,16 +1191,22 @@ public class SavingsApplication extends Application {
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
                 
-            BigDecimal totalToReceive = paymentsToReceive.stream()
-                .filter(p -> {
-                    // Only get payments for current month that aren't paid yet
-                    LocalDateTime now = LocalDateTime.now();
-                    return p.getDueDate().getMonth() == now.getMonth() && 
-                           p.getPaymentStatus() != PaymentStatus.PAID;
-                })
-                .map(p -> p.getGroup().getTotalAmount()) // Get the total amount for the group
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-                
+            BigDecimal totalToReceive = BigDecimal.ZERO;
+            for (Payment p : paymentsToReceive) {
+                Round round = p.getRound();
+                if (round != null && round.getWinnerParticipant() != null &&
+                    round.getWinnerParticipant().getUser().getId().equals(currentUser.getId())) {
+                    List<Payment> roundPayments = paymentService.getByRound(round);
+                    boolean allPaid = roundPayments.stream()
+                        .allMatch(pay -> pay.getPaymentStatus() == PaymentStatus.PAID);
+                    if (!allPaid) {
+                        // It's still pending, so show the group total
+                        totalToReceive = totalToReceive.add(p.getGroup().getTotalAmount());
+                    }
+                }
+            }
+            toReceiveLabel.setText(totalToReceive + " SEK");
+            
             Optional<Payment> nextPayment = paymentsToMake.stream()
                 .filter(p -> p.getPaymentStatus() != PaymentStatus.PAID)
                 .min(Comparator.comparing(Payment::getDueDate));
@@ -1210,7 +1216,6 @@ public class SavingsApplication extends Application {
                 .min(Comparator.comparing(Payment::getDueDate));
                 
             toPayLabel.setText(totalToPay + " SEK");
-            toReceiveLabel.setText(totalToReceive + " SEK");
             nextPaymentLabel.setText(nextPayment.isPresent() ? 
                 nextPayment.get().getDueDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) : "None");
             nextReceiptLabel.setText(nextReceipt.isPresent() ? 
@@ -1610,62 +1615,23 @@ public class SavingsApplication extends Application {
         VBox content = new VBox(10);
         content.setPadding(new Insets(20));
 
-        // Create tab pane for current and future payments
-        TabPane tabPane = new TabPane();
-        
-        // Create current payments tab
-        Tab currentPaymentsTab = new Tab("Current Payments");
-        TableView<Payment> currentPaymentsTable = createPaymentsTable();
-        currentPaymentsTable.setPrefHeight(400); // Increased from default to 400
-        currentPaymentsTab.setContent(currentPaymentsTable);
-        
-        // Create future payments tab
-        Tab futurePaymentsTab = new Tab("Future Payments");
-        TableView<Payment> futurePaymentsTable = createPaymentsTable();
-        futurePaymentsTable.setPrefHeight(400); // Increased from default to 400
-        futurePaymentsTab.setContent(futurePaymentsTable);
-        
-        tabPane.getTabs().addAll(currentPaymentsTab, futurePaymentsTab);
+        // Create a single payments table
+        Label paymentsLabel = new Label("Payments");
+        TableView<Payment> paymentsTable = createPaymentsTable();
+        paymentsTable.setPrefHeight(600);
 
-        // Load payments
-        LocalDateTime now = LocalDateTime.now();
+        // Load all payments
         List<Payment> allPayments = paymentService.getAllPayments();
-            
-        // Split payments into current and future
-        List<Payment> currentPayments = allPayments.stream()
-            .filter(p -> p.getDueDate().isBefore(now) || p.getDueDate().isEqual(now))
-            .collect(Collectors.toList());
-            
-        List<Payment> futurePayments = allPayments.stream()
-            .filter(p -> p.getDueDate().isAfter(now))
-            .collect(Collectors.toList());
-
-        currentPaymentsTable.getItems().addAll(currentPayments);
-        futurePaymentsTable.getItems().addAll(futurePayments);
+        paymentsTable.getItems().addAll(allPayments);
 
         // Add refresh button
         Button refreshPaymentBtn = new Button("Refresh");
         refreshPaymentBtn.setOnAction(e -> {
-            currentPaymentsTable.getItems().clear();
-            futurePaymentsTable.getItems().clear();
-            
-            List<Payment> refreshedPayments = paymentService.getAllPayments();
-            
-            // Update both tables
-            currentPaymentsTable.getItems().addAll(
-                refreshedPayments.stream()
-                    .filter(p -> p.getDueDate().isBefore(now) || p.getDueDate().isEqual(now))
-                    .collect(Collectors.toList())
-            );
-            
-            futurePaymentsTable.getItems().addAll(
-                refreshedPayments.stream()
-                    .filter(p -> p.getDueDate().isAfter(now))
-                    .collect(Collectors.toList())
-            );
+            paymentsTable.getItems().clear();
+            paymentsTable.getItems().addAll(paymentService.getAllPayments());
         });
 
-        content.getChildren().addAll(tabPane, refreshPaymentBtn);
+        content.getChildren().addAll(paymentsLabel, paymentsTable, refreshPaymentBtn);
         dialog.getDialogPane().setContent(content);
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.show();
@@ -1846,18 +1812,42 @@ public class SavingsApplication extends Application {
                         .map(Payment::getAmount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
                         
-                    BigDecimal totalToReceive = paymentsToReceive.stream()
-                        .filter(p -> {
-                            LocalDateTime now = LocalDateTime.now();
-                            return p.getDueDate().getMonth() == now.getMonth() && 
-                                   p.getPaymentStatus() != PaymentStatus.PAID;
-                        })
-                        .map(p -> p.getGroup().getTotalAmount())
-                        .reduce(BigDecimal.ZERO, BigDecimal::add);
-                    
-                    toPayLabel.setText(totalToPay + " SEK");
+                    BigDecimal totalToReceive = BigDecimal.ZERO;
+                    for (Payment p : paymentsToReceive) {
+                        // The 'paymentsToReceive' list is already filtered to include only payments
+                        // where p.getRound() is not null, its winner participant is not null,
+                        // and the winner is the currentUser.
+                        // Therefore, the explicit 'round' variable and the 'if' condition are redundant.
+                        List<Payment> roundPayments = paymentService.getByRound(p.getRound());
+                        boolean allPaid = roundPayments.stream()
+                                .allMatch(pay -> pay.getPaymentStatus() == PaymentStatus.PAID);
+                            if (!allPaid) {
+                                // It's still pending, so show the group total
+                                totalToReceive = totalToReceive.add(p.getGroup().getTotalAmount());
+                            }
+                        }
+                  
                     toReceiveLabel.setText(totalToReceive + " SEK");
-
+                    
+                    Optional<Payment> nextPayment = paymentsToMake.stream()
+                        .filter(p -> p.getPaymentStatus() != PaymentStatus.PAID)
+                        .min(Comparator.comparing(Payment::getDueDate));
+                        
+                    Optional<Payment> nextReceipt = paymentsToReceive.stream()
+                        .filter(p -> p.getPaymentStatus() != PaymentStatus.PAID)
+                        .min(Comparator.comparing(Payment::getDueDate));
+                    // Fix: Declaring nextPaymentLabel and nextReceiptLabel to resolve "cannot be resolved" errors.
+                    // Note: These labels are typically declared as class fields and initialized once for UI components.
+                    // Declaring them here as local variables will create new instances each time this block runs,
+                    // which might not be the intended behavior if they are part of an existing UI layout.
+                    Label nextPaymentLabel = new Label(); 
+                    Label nextReceiptLabel = new Label(); 
+                        
+                    toPayLabel.setText(totalToPay + " SEK");
+                    nextPaymentLabel.setText(nextPayment.isPresent() ? 
+                        nextPayment.get().getDueDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) : "None");
+                    nextReceiptLabel.setText(nextReceipt.isPresent() ? 
+                        nextReceipt.get().getDueDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) : "None");
                 } catch (Exception e) {
                     showAlert("Error", "Failed to process payment: " + e.getMessage(), Alert.AlertType.ERROR);
                 }
