@@ -43,6 +43,7 @@ public class SavingsApplication extends Application {
     private Stage primaryStage;
     private TableView<Payment> paymentsToMakeTable;
     private Label toPayLabel;
+    private Label toReceiveLabel;  // Add this line
 
     // Controllers
     private final MonthlyPaymentController monthlyPaymentController;
@@ -991,7 +992,7 @@ public class SavingsApplication extends Application {
         toReceiveBox.setAlignment(Pos.CENTER);
         Label toReceiveHeader = new Label("To Receive");
         toReceiveHeader.setStyle("-fx-font-weight: bold; -fx-font-size: 12px;");
-        Label toReceiveLabel = new Label("0 SEK");
+        toReceiveLabel = new Label("0 SEK");
         toReceiveLabel.setStyle("-fx-font-size: 14px;");
         toReceiveBox.getChildren().addAll(toReceiveHeader, toReceiveLabel);
         
@@ -1742,7 +1743,7 @@ public class SavingsApplication extends Application {
 
         if (!isBalanceEnough(payment)) {
             showAlert("Error", "There is not enough balance to pay this payment", Alert.AlertType.ERROR);
-
+            return;
         }
 
         // Create confirmation dialog
@@ -1781,6 +1782,7 @@ public class SavingsApplication extends Application {
                         List<Payment> roundPayments = paymentService.getByRound(round);
                         boolean allPaid = roundPayments.stream()
                             .allMatch(p -> p.getPaymentStatus() == PaymentStatus.PAID);
+                        
                         if (allPaid) {
                             round.setStatus(RoundStatus.COMPLETED);
                             roundService.updateRound(round);
@@ -1790,32 +1792,71 @@ public class SavingsApplication extends Application {
                             if (winner != null) {
                                 User winnerUser = winner.getUser();
                                 BigDecimal groupTotal = round.getGroup().getTotalAmount();
-                                winnerUser.setCurrentBalance(winnerUser.getCurrentBalance().add(groupTotal));
+                                
+                                // Update winner's balance
+                                BigDecimal winnerNewBalance = winnerUser.getCurrentBalance().add(groupTotal);
+                                winnerUser.setCurrentBalance(winnerNewBalance);
                                 userService.updateUser(winnerUser);
+                                
+                                // If the winner is the current user, update their displayed balance
+                                if (winnerUser.getId().equals(currentUser.getId())) {
+                                    currentUser.setCurrentBalance(winnerNewBalance);
+                                    
+                                    // Show success message for receiving the payment
+                                    showAlert("Success", 
+                                        "You have received the group payment of " + groupTotal + " SEK!", 
+                                        Alert.AlertType.INFORMATION);
+                                }
                             }
                         }
                     }
 
                     showAlert("Success", "Payment processed successfully", Alert.AlertType.INFORMATION);
 
-                    // Only refresh the payments to make table
+                    // Refresh both payments to make and receive tables
                     paymentsToMakeTable.getItems().clear();
                     List<Participant> userParticipants = participantService.getByUser(currentUser);
                     Set<Payment> userPayments = new HashSet<>();
                     for (Participant participant : userParticipants) {
                         userPayments.addAll(paymentService.getByGroupAndParticipant(participant.getGroup(), participant));
                     }
+                    
+                    // Get payments to make
                     List<Payment> paymentsToMake = userPayments.stream()
                         .filter(p -> p.getCreator().getId().equals(currentUser.getId()))
                         .collect(Collectors.toList());
                     paymentsToMakeTable.getItems().addAll(paymentsToMake);
                     
-                    // Update only the toPayLabel
+                    // Get payments to receive
+                    List<Payment> paymentsToReceive = userPayments.stream()
+                        .filter(p -> p.getRound() != null && 
+                                   p.getRound().getWinnerParticipant() != null && 
+                                   p.getRound().getWinnerParticipant().getUser().getId().equals(currentUser.getId()))
+                        .collect(Collectors.toList());
+                    
+                    // Update both labels
                     BigDecimal totalToPay = paymentsToMake.stream()
-                        .filter(p -> p.getPaymentStatus() != PaymentStatus.PAID)
+                        .filter(p -> {
+                            LocalDateTime now = LocalDateTime.now();
+                            LocalDateTime paymentDate = p.getDueDate();
+                            return paymentDate.getYear() == now.getYear() && 
+                                   paymentDate.getMonth() == now.getMonth() &&
+                                   p.getPaymentStatus() != PaymentStatus.PAID;
+                        })
                         .map(Payment::getAmount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
+                        
+                    BigDecimal totalToReceive = paymentsToReceive.stream()
+                        .filter(p -> {
+                            LocalDateTime now = LocalDateTime.now();
+                            return p.getDueDate().getMonth() == now.getMonth() && 
+                                   p.getPaymentStatus() != PaymentStatus.PAID;
+                        })
+                        .map(p -> p.getGroup().getTotalAmount())
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    
                     toPayLabel.setText(totalToPay + " SEK");
+                    toReceiveLabel.setText(totalToReceive + " SEK");
 
                 } catch (Exception e) {
                     showAlert("Error", "Failed to process payment: " + e.getMessage(), Alert.AlertType.ERROR);
